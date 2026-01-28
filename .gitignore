@@ -1,0 +1,158 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+.ENV/
+
+# PyCharm / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# ChromaDB
+chroma_db/
+.chroma/
+*.chroma
+
+# Pinecone (local cache if any)
+.pinecone/
+
+# Vector store data
+vectorstore/
+embeddings_cache/
+*.index
+
+# Data files (uncomment if you don't want to track data)
+# data/
+# *.pdf
+# *.csv
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+
+# Model files (if downloading large models)
+models/
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# RAGAS evaluation outputs
+evaluation/results/
+evaluation/outputs/
+*.jsonl
+
+# API keys and secrets
+secrets/
+*.key
+*.pem
+*.p12
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# uv
+.uv/
+
+# Local configuration overrides
+config.local.yaml
+config.local.yml
+
+# Backup files
+*.bak
+*.backup
+*~
