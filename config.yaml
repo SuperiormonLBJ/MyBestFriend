@@ -1,0 +1,7 @@
+chunk_size: 400
+overlap: 75
+top_k: 6
+similarity_threshold: 0.8
+embedding_model: text-embedding-3-large
+llm_model: gpt-4.1-mini
+vector_db: chroma
