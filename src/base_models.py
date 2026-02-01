@@ -20,3 +20,10 @@ class RetrievalLLMEval(BaseModel):
     confidence: float = Field(description="The confidence of the retrieval results, on a scale of 0 to 5")
     feedback: str = Field(description="The feedback for the question")
     score: float = Field(description="The score for the question, average of accuracy, relevance, completeness, on a scale of 0 to 5")
+
+class RetrievalEval(BaseModel):
+    """
+    Retrieval evaluation from metric based Eval
+    """
+    MRR: float = Field(description="The MRR of the retrieval results, on a scale of 0 to 1")
+    keyword_coverage: float = Field(description="The Keyword Coverage of the retrieval results, on a scale of 0 to 1")
