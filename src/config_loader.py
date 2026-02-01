@@ -16,22 +16,28 @@ class ConfigLoader:
     
     # Provide easy access to specific config values for other modules
     def get_chunk_size(self):
-        return self.config.get('chunk_size')
+        return self.config.get('CHUNK_SIZE')
     
     def get_overlap(self):
-        return self.config.get('overlap')
+        return self.config.get('OVERLAP')
     
     def get_top_k(self):
-        return self.config.get('top_k')
+        return self.config.get('TOP_K')
     
     def get_similarity_threshold(self):
-        return self.config.get('similarity_threshold')
+        return self.config.get('SIMILARITY_THRESHOLD')
     
     def get_embedding_model(self):
-        return self.config.get('embedding_model')
+        return self.config.get('EMBEDDING_MODEL')
     
     def get_llm_model(self):
-        return self.config.get('llm_model')
+        return self.config.get('LLM_MODEL')
     
     def get_vector_db(self):
-        return self.config.get('vector_db')
+        return self.config.get('VECTOR_DB')
+    
+    def get_db_name(self):
+        return self.config.get('DB_NAME')
+    
+    def get_data_dir(self):
+        return self.config.get('DATA_DIR')
