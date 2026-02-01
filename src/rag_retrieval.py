@@ -20,7 +20,7 @@ Context:
 {context}
 """
 
-def fetch_context(query):
+def fetch_context(query: str) -> list:
     """
     Fetch the context for the query from the vector store with Top K results
     """
@@ -40,7 +40,7 @@ def combine_all_user_questions(question: str, history: list) -> str:
     else:
         return question
 
-def generate_answer(query, history: list):
+def generate_answer(query, history: list[dict] = []):
     """
     Generate the answer for the query
 
