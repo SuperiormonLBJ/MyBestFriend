@@ -48,7 +48,6 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def load_document() -> str:
     documents = []
-
     doc_type = os.path.basename(DATA_DIR)
     loader = DirectoryLoader(DATA_DIR, glob="*.md", loader_cls=TextLoader, loader_kwargs={'encoding': 'utf-8'})
     folder_docs = loader.load()
