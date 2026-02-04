@@ -10,6 +10,14 @@ from collections import Counter
 
 from config_loader import ConfigLoader
 
+from langchain_community.document_loaders import PlaywrightURLLoader, PyPDFLoader, UnstructuredHTMLLoader
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
+from langchain_community.document_loaders import WebBaseLoader
+from urllib.parse import urlparse
+from pathlib import Path
+
 load_dotenv(override=True)
 
 """
@@ -29,12 +37,12 @@ RAG Ingestion Module
 """
 
 #/Users/beijim4/Desktop/Projects-AI/MyBestFriend/data
+project_root = Path(__file__).parent.parent
 config = ConfigLoader()
-DB_NAME = config.get_db_name()
+# Resolve DB_NAME to absolute path so ingestion and retrieval use the same DB regardless of cwd
+DB_NAME = str((project_root / config.get_db_name()).resolve())
 # Resolve DATA_DIR to absolute path relative to project root
 data_dir_from_config = config.get_data_dir()
-# Get project root (parent of src/)
-project_root = Path(__file__).parent.parent
 # Resolve relative path from project root
 DATA_DIR = str((project_root / data_dir_from_config).resolve())
 MODEL = config.get_llm_model()
@@ -46,7 +54,40 @@ embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def load_document() -> str:
+LINKEDIN_PROMPT = """
+You are a text cleaning and summarization assistant. 
+
+I will provide you with a raw text dump from a LinkedIn page. Your task is to:
+
+1. Remove all unnecessary website text, boilerplate, and repeated login/signup prompts.
+2. Remove all \n, excessive spaces, and strange characters.
+3. Extract only the **personal profile information** of the user, including:
+   - Name
+   - Headline / Summary
+   - Location
+   - Connections / Followers (optional)
+   - Current Experience (Job Title + Company + Years)
+   - Past Experience (Job Title + Company + Years)
+   - Education (School + Degree + Years)
+   - Certifications or Courses
+   - Languages
+   - Projects or notable achievements
+4. Present the information in a **clean, readable, structured format**, like:
+   
+   Name: ...
+   Headline: ...
+   Location: ...
+   Current Experience: ...
+   Past Experience: ...
+   Education: ...
+   Certifications: ...
+   Languages: ...
+   Projects: ...
+   
+5. Ignore any text that is not part of the user profile (e.g., "Sign in", "Join now", LinkedIn navigation, footer, ads, etc.).
+"""
+
+def load_document_md() -> str:
     documents = []
     doc_type = os.path.basename(DATA_DIR)
     loader = DirectoryLoader(DATA_DIR, glob="*.md", loader_cls=TextLoader, loader_kwargs={'encoding': 'utf-8'})
@@ -56,6 +97,59 @@ def load_document() -> str:
         doc.metadata["source"] = doc.metadata.get("source").split("/")[-1]
         documents.append(doc)
     
+    return documents
+
+def load_document_pdf() -> str:
+    documents = []
+    doc_type = os.path.basename(DATA_DIR)
+    loader = DirectoryLoader(DATA_DIR, glob="*.pdf", loader_cls=PyPDFLoader)
+    folder_docs = loader.load()
+    for doc in folder_docs:
+        doc.metadata["doc_type"] = doc_type
+        doc.metadata["source"] = doc.metadata.get("source").split("/")[-1]
+        documents.append(doc)
+    
+    return documents
+
+def load_document_url():
+    """
+    Load documents from a file containing URLs and save them as text files
+    """
+    documents = []
+
+    urls_file = Path(DATA_DIR) / "urls.txt"
+    if not urls_file.exists():
+        return documents
+
+    with open(urls_file) as f:
+        urls = [u.strip() for u in f.readlines() if u.strip()]
+
+    if not urls:
+        return documents
+
+    loader = WebBaseLoader(urls)
+    loaded_docs = loader.load()
+
+    for doc in loaded_docs:
+        doc.page_content = doc.page_content.encode("latin1", errors="ignore").decode("utf-8", errors="ignore")
+        parsed = urlparse(doc.metadata.get("source", ""))
+        doc.metadata["doc_type"] = "url"
+        doc.metadata["source"] = parsed.netloc
+        if doc.metadata.get("source") == "www.linkedin.com":
+            llm = ChatOpenAI(model=MODEL, temperature=0)
+            messages = [SystemMessage(content=LINKEDIN_PROMPT.format(raw_linkedin_text=doc.page_content))]
+            messages.append(HumanMessage(content=doc.page_content))
+            doc.page_content = llm.invoke(messages).content
+        doc.metadata["full_url"] = doc.metadata.get("source")
+        documents.append(doc)
+        with open(Path(DATA_DIR) / (doc.metadata.get("source") + ".txt"), "w") as f:
+            f.write(doc.page_content)
+
+    print(f"Loaded {len(documents)} URL documents")
+    return documents
+
+def load_document():
+    documents = load_document_md() + load_document_pdf() + load_document_url()
     return documents
 
 """
@@ -75,6 +169,7 @@ def create_chunks(documents):
 
 def embed_chunks(chunks):
     if os.path.exists(DB_NAME):
+        print(f"Deleting existing vectorstore at {DB_NAME}")
         Chroma(persist_directory=DB_NAME, embedding_function=embeddings, collection_name="my_collection").delete_collection()
 
     vector_store = Chroma.from_documents(
@@ -106,10 +201,6 @@ def embed_chunks(chunks):
 
     return vector_store
 
-
-"""
-TODO: Implement section split, semantic split and recursive split
-"""
 
 if __name__ == "__main__":
     documents = load_document()

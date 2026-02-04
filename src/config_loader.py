@@ -2,13 +2,12 @@ import yaml
 from pathlib import Path
 
 class ConfigLoader:
-    def __init__(self, config_path: Path = Path('../config.yaml')):
-        self.config_path = config_path
-        self.config = self.load_config()
-
-    def load_config(self):
-        with open(self.config_path, 'r') as file:
-            return yaml.safe_load(file)
+    def __init__(self, config_path: Path = None):
+        if config_path is None:
+            project_root = Path(__file__).parent.parent
+            config_path = project_root / 'config.yaml'
+        with open(config_path, 'r') as f:
+            self.config = yaml.safe_load(f)
 
     def get_config(self):
         """Get the full config dictionary."""
@@ -41,3 +40,6 @@ class ConfigLoader:
     
     def get_data_dir(self):
         return self.config.get('DATA_DIR')
+    
+    def get_generator_model(self):
+        return self.config.get('GENERATOR_MODEL')

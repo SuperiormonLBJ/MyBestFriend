@@ -27,3 +27,6 @@ class RetrievalEval(BaseModel):
     """
     MRR: float = Field(description="The MRR of the retrieval results, on a scale of 0 to 1")
     keyword_coverage: float = Field(description="The Keyword Coverage of the retrieval results, on a scale of 0 to 1")
+
+class RerankOrder(BaseModel):
+    order: list[int] = Field(description="The order of the documents based on the relevance to the question")
