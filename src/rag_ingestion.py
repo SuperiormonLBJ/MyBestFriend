@@ -7,8 +7,15 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from collections import Counter
+import sys
 
-from config_loader import ConfigLoader
+# Add project root to path so we can import from utils
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from utils.config_loader import ConfigLoader
+from utils.prompts import LINKEDIN_PROMPT
 
 from langchain_community.document_loaders import PlaywrightURLLoader, PyPDFLoader, UnstructuredHTMLLoader
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -53,39 +60,6 @@ OVERLAP = config.get_overlap()
 embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-LINKEDIN_PROMPT = """
-You are a text cleaning and summarization assistant. 
-
-I will provide you with a raw text dump from a LinkedIn page. Your task is to:
-
-1. Remove all unnecessary website text, boilerplate, and repeated login/signup prompts.
-2. Remove all \n, excessive spaces, and strange characters.
-3. Extract only the **personal profile information** of the user, including:
-   - Name
-   - Headline / Summary
-   - Location
-   - Connections / Followers (optional)
-   - Current Experience (Job Title + Company + Years)
-   - Past Experience (Job Title + Company + Years)
-   - Education (School + Degree + Years)
-   - Certifications or Courses
-   - Languages
-   - Projects or notable achievements
-4. Present the information in a **clean, readable, structured format**, like:
-   
-   Name: ...
-   Headline: ...
-   Location: ...
-   Current Experience: ...
-   Past Experience: ...
-   Education: ...
-   Certifications: ...
-   Languages: ...
-   Projects: ...
-   
-5. Ignore any text that is not part of the user profile (e.g., "Sign in", "Join now", LinkedIn navigation, footer, ads, etc.).
-"""
 
 def load_document_md() -> str:
     documents = []
@@ -152,14 +126,6 @@ def load_document():
     documents = load_document_md() + load_document_pdf() + load_document_url()
     return documents
 
-"""
-Can not use RecursiveCharacterTextSplitter here since we have sections and bounderies. 
-so RecursiveCharacterTextSplitter will only mix up the topics.
-
-Section split - CV
-Semantic split - LinkedIn and Website
-Recursive split - unstructured text
-"""
 def create_chunks(documents):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=OVERLAP)
     chunks = text_splitter.split_documents(documents)

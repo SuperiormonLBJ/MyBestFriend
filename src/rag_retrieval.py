@@ -1,7 +1,17 @@
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
-from base_models import RerankOrder
-from config_loader import ConfigLoader
+
+import sys
+from pathlib import Path
+
+# Add project root to path so we can import from utils
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from utils.base_models import RerankOrder
+from utils.config_loader import ConfigLoader
+from utils.prompts import REWRITE_PROMPT, SYSTEM_PROMPT_GENERATOR, SYSTEM_PROMPT_RERANKER
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
 from dotenv import load_dotenv
 
@@ -12,6 +22,7 @@ DB_NAME = config.get_db_name()
 embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
 llm=ChatOpenAI(model=config.get_generator_model())
 TOP_K = config.get_top_k()
+
 vectorstore = Chroma(persist_directory=DB_NAME, embedding_function=embeddings, collection_name="my_collection")
 retriever_similarity = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
 retriever_mmr = vectorstore.as_retriever(
@@ -22,16 +33,6 @@ retriever_mmr = vectorstore.as_retriever(
     }
 )
 
-SYSTEM_PROMPT = """
-You are a helpful assistant that can answer questions about an user's profile and daily life.
-This response is used for a user to know more about the user's profile and daily life from a HR perspective.
-
-You are given a question and a context.
-You need to answer the question based on the context.
-Context:
-{context}
-"""
-
 def fetch_context(query: str) -> list:
     """
     Fetch the context for the query from the vector store with Top K results
@@ -39,16 +40,39 @@ def fetch_context(query: str) -> list:
     context_similarity = retriever_similarity.invoke(query)
     context_mmr = retriever_mmr.invoke(query)
     context = context_similarity + context_mmr
-    context_reranked = rerank_documents(query, context, top_k=TOP_K)
-    return context_reranked
+    # remove duplicates from similarity and mmr by creating a unique key from page_content and source metadata
 
-SYSTEM_PROMPT_RERANK = """
-You are a document re-ranker.
-You are provided with a question and a list of relevant chunks of text from a query of a knowledge base.
-The chunks are provided in the order they were retrieved; this should be approximately ordered by relevance, but you may be able to improve on that.
-You must rank order the provided chunks by relevance to the question, with the most relevant chunk first.
-Reply only with the list of ranked chunk ids, nothing else. Include all the chunk ids you are provided with, reranked.
-"""
+    return context
+
+def deduplicate_context(context: list) -> list:
+    """
+    Deduplicate the context by creating a unique key from page_content and source metadata
+    """
+    seen = {}
+    deduplicated=[]
+    for doc in context:
+        key = (doc.page_content, doc.metadata.get("source", ""))
+        if key not in seen:
+            seen[key] = True
+            deduplicated.append(doc)
+    return deduplicated
+
+def rewrite_query(query: str, history: list = []) -> str:
+    user_prompt = f"""
+        This is the history of your conversation so far with the user:
+        {history}
+
+        The user has asked the following question:
+        {query}
+    """
+    messages = [
+        {"role": "system", "content": REWRITE_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    rewritten_query = llm.invoke(messages)
+    print(f"Rewritten query: {rewritten_query.content}")
+    return rewritten_query.content
 
 def rerank_documents(query: str, docs: list, top_k: int = TOP_K):
     """
@@ -61,7 +85,7 @@ def rerank_documents(query: str, docs: list, top_k: int = TOP_K):
         user_prompt += f"# CHUNK ID: {index + 1}:\n\n{chunk.page_content}\n\n"
     user_prompt += "Reply only with the list of ranked chunk ids, nothing else."
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_RERANK},
+        {"role": "system", "content": SYSTEM_PROMPT_RERANKER},
         {"role": "user", "content": user_prompt},
     ]
     llm_with_structured_output = llm.with_structured_output(RerankOrder)
@@ -93,12 +117,21 @@ def generate_answer(query, history: list[dict] = []):
     """
     
     # combine all user questions into a single question
-    combined_question = combine_all_user_questions(query, history)
-    context_docs = fetch_context(combined_question)
-    context = "\n".join([doc.page_content for doc in context_docs])
+    rewritten_query = rewrite_query(query, history)
+    combined_query_rewritten = combine_all_user_questions(rewritten_query, history)
+    combined_question_original = combine_all_user_questions(query, history)
+    context_docs_rewritten = fetch_context(combined_query_rewritten)
+    context_docs_original = fetch_context(combined_question_original)
+    context_docs = context_docs_rewritten + context_docs_original
+
+    context_docs = deduplicate_context(context_docs)
+
+    reranked_context_docs = rerank_documents(query, context_docs, top_k=TOP_K)
+    
+    context = "\n".join([doc.page_content for doc in reranked_context_docs])
 
     # convert history to langchain format
-    messages = [SystemMessage(content=SYSTEM_PROMPT.format(context=context))]
+    messages = [SystemMessage(content=SYSTEM_PROMPT_GENERATOR.format(context=context))]
 
     messages.extend(convert_to_messages(history)) # system message + previous history
     messages.append(HumanMessage(content=query))

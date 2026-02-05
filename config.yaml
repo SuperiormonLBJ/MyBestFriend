@@ -4,7 +4,8 @@ TOP_K: 6
 SIMILARITY_THRESHOLD: 0.8
 EMBEDDING_MODEL: text-embedding-3-large
 LLM_MODEL: gpt-4.1-mini
-GENERATOR_MODEL: gpt-4.1-mini
+GENERATOR_MODEL: gpt-4o-mini
+EVALUATOR_MODEL: gpt-4o-mini
 VECTOR_DB: chroma
 DB_NAME: chroma_db
 DATA_DIR: 'data' 
