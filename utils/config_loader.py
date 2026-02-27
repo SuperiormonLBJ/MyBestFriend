@@ -43,3 +43,6 @@ class ConfigLoader:
     
     def get_generator_model(self):
         return self.config.get('GENERATOR_MODEL')
+        
+    def get_evaluator_model(self):
+        return self.config.get('EVALUATOR_MODEL')

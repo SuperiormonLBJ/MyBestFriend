@@ -1,0 +1,57 @@
+Name: Beiji Li
+
+Location: Singapore
+
+Followers: 291  
+Connections: 283
+
+Headline / Summary:  
+Passionate Software Engineer and AI Innovator with a proven ability to bridge engineering and AI, focusing on innovative problem-solving and rapid skill acquisition.
+
+Current Experience:  
+- Position and company details not fully visible, but currently associated with UOB (United Overseas Bank)  
+- Tenure at UOB: Approximately 2021 - 2023 (exact role not specified)
+
+Past Experience:  
+- Previous role(s) not fully detailed, but includes experience from 2017 - 2021 (company and title not specified)
+
+Education:  
+- National University of Singapore (NUS)  
+  Degree details not fully visible, but completed Master of Engineering studies  
+  Years: Approx. 2017 - 2021
+
+Certifications:  
+- Cloudera Data Analyst, Cloudera (Issued May 2024)  
+- SQL - MySQL for Data Analytics and Business Intelligence, Udemy (Issued Jan 2023)  
+- Statistics for Data Science and Business Analysis, Udemy (Issued Jan 2023)  
+- Data Structures & Algorithms - Python, Udemy (Issued Dec 2022)  
+- MLOPS Engineer on AWS, Trainocate Singapore (Issued Jul 2024, Expires Jul 2028)  
+- Agentic AI Automation with n8n, Tertiary Courses (Issued Nov 2025, Expires Nov 2027)  
+- DevOps Engineering on AWS, Trainocate Group (Issued Dec 2024, Expires Dec 2026)  
+- Python For Deep Learning Models and AI, NTUC LearningHub (Issued Dec 2024, Expires Dec 2026)  
+- DevOps Foundation Certification, DevOps Institute (Issued Nov 2023, Expires Nov 2025)  
+- DevSecOps Foundation (DSOF)SM Certification, DevOps Institute (Issued Nov 2023, Expires Nov 2025)
+
+Courses:  
+- Computer Vision and Deep Learning (Cross-Faculty Module in Yale-NUS), Course Code: YSC4227  
+- Machine Learning - Stanford - Online, Course Code: CS229
+
+Languages:  
+- English: Full professional proficiency  
+- Chinese: Native or bilingual proficiency
+
+Projects / Notable Achievements:  
+- The 11th Challenge Cup Students Entrepreneurship Competition - Gold Award (Jun 2020 - Mar 2021)  
+  Project involved converting recycled wastes into sustainable pavement materials. Developed a business plan covering products, technical consulting, and engineering contracting to improve transportation efficiency in rural China. Achieved cost savings of approximately 20,000 RMB per kilometer of road built.
+
+Recommendations:  
+- Received strong recommendation from Justin Ker-Wei Yeoh, highlighting Beiji’s innovation, problem-solving skills, rapid learning, and ability to apply advanced computer vision and AI techniques in civil engineering contexts.
+
+Additional Notes:  
+- Active interest and involvement in AI, machine learning, and software engineering.  
+- Engaged in sharing knowledge and learning through platforms like Udemy and personal projects related to AI and automation.  
+- Connected with over 10 people at UOB, indicating a professional network within the organization.
+
+---
+
+This summary captures all available personal profile information from the provided LinkedIn text dump.

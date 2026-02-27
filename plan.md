@@ -28,37 +28,37 @@ Build a grounded personal RAG chatbot that:
     - [x] PINECONE_API_KEY=
     - [x] RECIPIENT_EMAIL=
 
-- [ ] Step 4 — Config File
-  - [ ] Create `config.yaml` with:
-    - [ ] chunk_size: 450
-    - [ ] overlap: 75
-    - [ ] top_k: 6
-    - [ ] similarity_threshold: 0.78
-    - [ ] embedding_model: text-embedding-3-large
-    - [ ] llm_model: gpt-4.1
-    - [ ] vector_db: chroma
+- [x] Step 4 — Config File
+  - [x] Create `config.yaml` with:
+    - [x] chunk_size: 400
+    - [x] overlap: 75
+    - [x] top_k: 6
+    - [x] similarity_threshold: 0.8
+    - [x] embedding_model: text-embedding-3-large
+    - [x] llm_model: gpt-4.1, gpt-4.1-mini for testing first
+    - [x] vector_db: chroma
 
 
 ⸻
 
 1.5. Config Loader (src/config_loader.py)
 
-- [ ] Implement `src/config_loader.py`:
-  - [ ] Load config.yaml
-  - [ ] Parse configuration values
+- [x] Implement `src/config_loader.py`:
+  - [x] Load config.yaml
+  - [x] Parse configuration values
   - [ ] Provide config access to other modules
-  - [ ] Validate config values
+  - [x] Validate config values -> no need for now
 
 ⸻
 
 2. Folder Structure
 
-- [ ] Create folder structure:
-  - [ ] `src/` directory
-  - [ ] `prompts/` directory
-  - [ ] `evaluation/` directory
-  - [ ] `data/` directory
-  - [ ] Create all source files:
+- [x] Create folder structure:
+  - [x] `src/` directory
+  - [x] `prompts/` directory
+  - [x] `evaluation/` directory
+  - [x] `data/` directory
+  - [x] Create all source files:
     - [ ] `src/main.py` (FastAPI entrypoint)
     - [ ] `src/engine.py` (RAG orchestrator)
     - [ ] `src/retriever.py`
@@ -85,14 +85,15 @@ Build a grounded personal RAG chatbot that:
 
 3. Data Ingestion (src/ingestion.py)
 
-- [ ] Implement `src/ingestion.py`:
+- [x] Implement `src/ingestion.py`:
   - [ ] Load CV (PDF)
   - [ ] Load LinkedIn (TXT)
   - [ ] Load Website (HTML)
   - [ ] Clean text but preserve headers
+  - [x] MD file
   - [ ] Attach metadata:
-    - [ ] source
-    - [ ] doc_type
+    - [x] source
+    - [x] doc_type
     - [ ] section
     - [ ] timestamp
 
@@ -103,6 +104,7 @@ Build a grounded personal RAG chatbot that:
 
 - [ ] Implement `src/chunking.py`:
   - [ ] Split by headings → semantic paragraphs
+        we are not using RecursiveCharacter here since that is more for unstructured/long text, here we have sections and bounderies. so RecursiveCharacter will only mix up the topics.
   - [ ] Chunk size = 450 tokens
   - [ ] Overlap = 75 tokens
   - [ ] One chunk = one logical unit (project/job/skill group)
@@ -254,4 +256,10 @@ Project is complete when:
 - [ ] Unknown questions trigger notification
 - [ ] RAGAS targets met
 - [ ] API functional
+
+
+allow user to delete with local deployemtn admin portal
+finetune on model and parameters
+generate eval themselves
+check on eval dashboard and see the result
 
