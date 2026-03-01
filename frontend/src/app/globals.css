@@ -1,0 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  /* AI-Native UI Design System - Light */
+  --primary: #6366F1;
+  --primary-hover: #4F46E5;
+  --secondary: #818CF8;
+  --cta: #22C55E;
+  --cta-hover: #16A34A;
+  --background: #EEF2FF;
+  --background-elevated: #ffffff;
+  --foreground: #312E81;
+  --foreground-muted: #4C1D95;
+  --border: #E0E7FF;
+  --chat-user-bg: #6366F1;
+  --chat-assistant-bg: #E0E7FF;
+}
+
+.dark {
+  /* AI-Native UI Design System - Dark */
+  --primary: #818CF8;
+  --primary-hover: #6366F1;
+  --secondary: #A5B4FC;
+  --cta: #22C55E;
+  --cta-hover: #4ADE80;
+  --background: #0F0F1A;
+  --background-elevated: #1A1A2E;
+  --foreground: #E0E7FF;
+  --foreground-muted: #A5B4FC;
+  --border: #312E81;
+  --chat-user-bg: #4338CA;
+  --chat-assistant-bg: #1E1B4B;
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-cta: var(--cta);
+  --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border: var(--border);
+  --color-chat-user-bg: var(--chat-user-bg);
+  --color-chat-assistant-bg: var(--chat-assistant-bg);
+  --font-heading: 'Caveat', cursive;
+  --font-body: 'Quicksand', sans-serif;
+}
+
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body, * {
+    transition: none !important;
+  }
+}

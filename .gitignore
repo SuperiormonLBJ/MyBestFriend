@@ -44,6 +44,20 @@ env/
 .vscode/
 *.code-workspace
 
+# Cursor IDE
+.cursor/
+
+# Next.js / Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Generated design system (ui-ux-pro-max)
+design-system/
+
+# Legacy root config (use backend/config.yaml)
+/config.yaml
+
 # Jupyter Notebook
 .ipynb_checkpoints
 #*.ipynb
