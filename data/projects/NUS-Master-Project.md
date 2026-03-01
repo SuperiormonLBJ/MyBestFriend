@@ -6,9 +6,6 @@ year: 2022
 tags: [computer-vision, intelligent-transportation, multi-object-tracking, yolo, deep-learning, research, multi-modal]
 ---
 
-Tags:
-#computer-vision #intelligent-transportation #multi-object-tracking #yolo #deep-learning #research #multi-modal
-
 ## 1. Overview
 
 **Domain:** Intelligent Transportation / Computer Vision

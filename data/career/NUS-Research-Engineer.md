@@ -17,8 +17,6 @@ Focus:
 - Workflow optimization and automation for construction machinery  
 - Traffic monitoring via computer vision  
 
----
-
 ## 2. Key Projects
 
 ### 2.1 Operation Planning for Remotely Controlled Excavator
@@ -40,8 +38,6 @@ Focus:
 **Skills / Signals**
 simulation, workflow-optimization, autonomous-systems, collaboration
 
----
-
 ### 2.2 Vehicle Location and Size Tracking from Surveillance Camera
 
 **Problem / Pain Points**
@@ -61,15 +57,11 @@ simulation, workflow-optimization, autonomous-systems, collaboration
 **Skills / Signals**
 computer-vision, python, opencv, data-analysis, traffic-monitoring
 
----
-
 ## 3. Publications
 
 1. **CONVR22 Conference (Oct 2022)**  
    - B. Li, X. Bai, J. K.W. Yeoh, *"Review and Classification of Autonomous Excavation Systems"*  
    - X. Bai, B. Li, J. K.W. Yeoh, *"The Influence of Down-Sampling Method and Geometric Features on Earthwork Estimation"*
-
----
 
 ## 4. RAG Signals / Career Retrieval
 

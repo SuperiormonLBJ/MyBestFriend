@@ -24,6 +24,8 @@ from langchain_openai import ChatOpenAI
 from langchain_community.document_loaders import WebBaseLoader
 from urllib.parse import urlparse
 from pathlib import Path
+from langchain_core.documents import Document
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 load_dotenv(override=True)
 
@@ -61,16 +63,82 @@ embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+def _parse_md_frontmatter(content: str):
+    """
+    Parse simple YAML-like frontmatter:
+
+    ---
+    key: value
+    tags: [a, b, c]
+    ---
+    """
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, content
+
+    meta_lines = []
+    i = 1
+    while i < len(lines) and lines[i].strip() != "---":
+        meta_lines.append(lines[i])
+        i += 1
+
+    if i >= len(lines):
+        # no closing ---
+        return {}, content
+
+    body = "\n".join(lines[i + 1:])
+
+    metadata = {}
+    for line in meta_lines:
+        stripped = line.strip()
+        if not stripped or ":" not in stripped:
+            continue
+        key, val = stripped.split(":", 1)
+        key = key.strip()
+        val = val.strip()
+        
+        metadata[key] = val.strip().strip("'\"")
+
+    return metadata, body.lstrip("\n")
+
+
 def load_document_md() -> str:
     documents = []
-    doc_type = os.path.basename(DATA_DIR)
-    loader = DirectoryLoader(DATA_DIR, glob="*.md", loader_cls=TextLoader, loader_kwargs={'encoding': 'utf-8'})
+
+    # Load all markdown recursively under DATA_DIR
+    loader = DirectoryLoader(
+        DATA_DIR,
+        glob="**/*.md",
+        loader_cls=TextLoader,
+        loader_kwargs={"encoding": "utf-8"},
+    )
     folder_docs = loader.load()
+
     for doc in folder_docs:
-        doc.metadata["doc_type"] = doc_type
-        doc.metadata["source"] = doc.metadata.get("source").split("/")[-1]
-        documents.append(doc)
-    
+        raw_source = doc.metadata.get("source", "")
+        source_path = raw_source
+
+        # Parse and strip frontmatter
+        frontmatter_meta, body = _parse_md_frontmatter(doc.page_content)
+        if frontmatter_meta:
+            doc.page_content = body
+            for k, v in frontmatter_meta.items():
+                doc.metadata[k] = v
+
+        # doc_type: prefer frontmatter "type", else parent folder name
+        if "type" in doc.metadata:
+            doc.metadata["doc_type"] = doc.metadata["type"]
+        else:
+            parent = os.path.basename(os.path.dirname(source_path))
+            doc.metadata["doc_type"] = parent or os.path.basename(DATA_DIR)
+
+        # source: just the filename
+        if raw_source:
+            doc.metadata["source"] = os.path.basename(raw_source)
+
+        documents.append(doc)  # Has to be Document object !!!
+
+    print(f"loaded {len(documents)} md documents")
     return documents
 
 def load_document_pdf() -> str:
@@ -123,7 +191,8 @@ def load_document_url():
     return documents
 
 def load_document():
-    documents = load_document_md() + load_document_pdf() + load_document_url()
+    # documents = load_document_md() + load_document_pdf() + load_document_url()
+    documents = load_document_md()
     return documents
 
 def create_chunks(documents):
@@ -132,6 +201,36 @@ def create_chunks(documents):
 
     print(f"Divided into {len(chunks)} chunks")
     return chunks
+
+def create_chunks_markdown(documents):
+    # markdown splitter
+
+    # Two-level split: ## and ### — matches NUS-Master-Project (e.g. Pipeline A/B, Challenges subsections)
+    markdown_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=[
+            ("##", "section"),
+            ("###", "subsection"),
+        ]
+    )
+
+    chunked_docs = []
+    for doc in documents:
+        # Split the markdown body into section chunks
+        section_chunks = markdown_splitter.split_text(doc.page_content)
+        for c in section_chunks:
+            # Carry over original metadata, plus any header info (`section`)
+            new_meta = dict(doc.metadata)
+            # c.metadata may contain {"section": "1. Overview"} etc.
+            section_title = c.metadata.get("section")
+            project_title = doc.metadata.get("title")
+            if section_title:
+                c.page_content = f"project title: {project_title}\n\nsection: {section_title}\n\n{c.page_content}"
+            new_meta.update(c.metadata)
+            chunked_docs.append(
+                Document(page_content=c.page_content, metadata=new_meta)
+            )
+
+    return chunked_docs
 
 def embed_chunks(chunks):
     if os.path.exists(DB_NAME):

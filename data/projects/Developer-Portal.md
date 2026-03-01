@@ -6,9 +6,6 @@ year: 2024
 tags: [software-engineering, full-stack, database, springboot, devops, uob, automation]
 ---
 
-Tags:
-#software-engineering #full-stack #database #springboot #devops #uob #automation
-
 ## 1. Overview
 
 **Domain:** DevOps Automation / Internal Platform

@@ -32,6 +32,9 @@ Basketball helped build early confidence and collaborative mindset that later tr
 
 ## 2. Diving
 
+Context:
+Beiji has been doing diving and enjoying the blue poison since 2022.
+
 Licenses:
 - Open Water (OW)
 - Advanced Open Water (AOW)

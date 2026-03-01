@@ -6,8 +6,6 @@ year: 2025
 tags: [llm, rag, code-review, automation, agent, dev-platform, serverless, prompt-engineering]
 ---
 
----
-
 ## 1. Overview
 
 **Domain:** AI Developer Productivity / Code Automation
@@ -26,8 +24,6 @@ The system combines:
 - Cross-file retrieval (RAG)
 - Interactive AI chat
 
----
-
 ## 2. Problem (Pain)
 
 Manual pull request reviews caused:
@@ -39,8 +35,6 @@ Manual pull request reviews caused:
 
 Key bottleneck:
 Human reviewers cannot scale with increasing PR volume.
-
----
 
 ## 3. Solution (Architecture)
 
@@ -59,8 +53,6 @@ Bitbucket PR
 → Structured review output
 
 → Interactive chat
-
----
 
 ### System Components
 
@@ -86,8 +78,6 @@ Bitbucket PR
 - Groq API (Llama models)
 - Prompt templates for review rubric
 
----
-
 ## 4. RAG Design (High-Value Section)
 
 Goal:
@@ -105,8 +95,6 @@ Context sources:
 - Historical conversation memory
 - Coding standards rubric
 
----
-
 ## 5. Prompt Engineering Strategy
 
 Review rubric includes:
@@ -121,8 +109,6 @@ Optimization:
 - Only analyze diffs (not full repo)
 - Shortened prompts to reduce token usage
 - Structured output format
-
----
 
 ## 6. Data Flow
 
@@ -140,8 +126,6 @@ Webhook triggered pipeline:
 Interactive flow:
 
 User → Chat UI → Backend → LLM → Response → Stored in DB
-
----
 
 ## 7. Tech Stack
 
@@ -171,8 +155,6 @@ User → Chat UI → Backend → LLM → Response → Stored in DB
 
 - Keycloak (OIDC + RBAC)
 
----
-
 ## 8. Challenges
 
 ### Large PR Token Limits
@@ -186,8 +168,6 @@ Solution:
 - Two-pass summarization:
     - per-file review
     - global risk aggregation
-
----
 
 ### Cross-file Logic Loss
 
@@ -227,16 +207,12 @@ Why Flask instead of FastAPI?
 Why Postgres memory?
 → persistent conversational context.
 
----
-
 ## 10. Performance Optimization
 
 - Token estimation before LLM call
 - Caching repeated PR results
 - Skip binary files
 - Structured prompts to reduce output tokens
-
----
 
 ## 11. Security Design
 
@@ -245,15 +221,11 @@ Why Postgres memory?
 - Optional on-prem model support
 - Webhook signature validation
 
----
-
 ## 12. Results (Business Impact)
 
 - ~40% reduction in manual review time
 - 10+ engineering teams onboarded
 - Improved review consistency
-
----
 
 ## 13. System Design Extensions (Scaling Path)
 
