@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 config = ConfigLoader()
-DB_NAME = config.get_db_name()
+DB_NAME = str((project_root / config.get_db_name()).resolve())
 embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
 llm=ChatOpenAI(model=config.get_generator_model())
 TOP_K = config.get_top_k()
