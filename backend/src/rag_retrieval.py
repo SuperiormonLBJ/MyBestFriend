@@ -33,6 +33,18 @@ retriever_mmr = vectorstore.as_retriever(
     }
 )
 
+
+def reload_vectorstore(new_vectorstore):
+    """Replace the global vectorstore and retrievers after re-ingestion."""
+    global vectorstore, retriever_similarity, retriever_mmr
+    vectorstore = new_vectorstore
+    retriever_similarity = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
+    retriever_mmr = vectorstore.as_retriever(
+        search_type="mmr",
+        search_kwargs={"k": TOP_K, "lambda_mult": 0.6},
+    )
+
+
 def fetch_context(query: str) -> list:
     """
     Fetch the context for the query from the vector store with Top K results

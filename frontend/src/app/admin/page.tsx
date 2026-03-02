@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Database, FileText, Settings } from "lucide-react";
+import { Database, Settings } from "lucide-react";
 
 export default function AdminPage() {
   return (
@@ -28,29 +28,15 @@ export default function AdminPage() {
               <div>
                 <h3 className="font-semibold text-[var(--foreground)]">Knowledge Base</h3>
                 <p className="text-sm text-[var(--foreground-muted)]">
-                  View ingested documents in a tree
+                  View, add, and delete documents in the vector store
                 </p>
               </div>
             </div>
           </Link>
 
-          <div className="group rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">
-                <FileText className="h-6 w-6" strokeWidth={2} />
-              </div>
-              <div>
-                <h3 className="font-semibold text-[var(--foreground)]">Documents</h3>
-                <p className="text-sm text-[var(--foreground-muted)]">
-                  Upload and review source files
-                </p>
-              </div>
-            </div>
-          </div>
-
           <Link
-            href="/settings"
-            className="group block rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer sm:col-span-2"
+            href="/admin/settings"
+            className="group block rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">

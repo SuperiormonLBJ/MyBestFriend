@@ -269,5 +269,5 @@ def embed_chunks(chunks):
 
 if __name__ == "__main__":
     documents = load_document()
-    chunks = create_chunks(documents)
+    chunks = create_chunks_markdown(documents)
     embed_chunks(chunks)

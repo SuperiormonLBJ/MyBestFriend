@@ -4,6 +4,7 @@ import { useConfig } from "@/components/config-provider";
 import type { FullConfig } from "@/components/config-provider";
 import { RefreshCw, Save, AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 
 const EMBEDDING_MODELS = [
   "text-embedding-3-large",
@@ -75,6 +76,12 @@ export default function SettingsPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
+        <Link   
+              href="/admin"
+              className="text-sm text-[var(--foreground-muted)] hover:text-[var(--primary)] mb-2 inline-block"
+            >
+              ← Admin Panel 
+        </Link>         
         <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
           SETTINGS
         </h2>
