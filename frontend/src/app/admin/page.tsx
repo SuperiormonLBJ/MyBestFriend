@@ -17,7 +17,10 @@ export default function AdminPage() {
 
       <div className="flex-1 overflow-y-auto px-6 py-8">
         <div className="mx-auto grid max-w-4xl gap-6 sm:grid-cols-2">
-          <div className="group rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer">
+          <Link
+            href="/admin/knowledge"
+            className="group block rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer"
+          >
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">
                 <Database className="h-6 w-6" strokeWidth={2} />
@@ -25,11 +28,11 @@ export default function AdminPage() {
               <div>
                 <h3 className="font-semibold text-[var(--foreground)]">Knowledge Base</h3>
                 <p className="text-sm text-[var(--foreground-muted)]">
-                  Ingest and manage RAG documents
+                  View ingested documents in a tree
                 </p>
               </div>
             </div>
-          </div>
+          </Link>
 
           <div className="group rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer">
             <div className="flex items-center gap-3">

@@ -141,3 +141,51 @@ def generate_answer(query, history: list[dict] = []):
     print(f"Generated answer with model: {config.get_generator_model()}")
 
     return response.content, context_docs
+
+
+def get_knowledge_tree():
+    """
+    Return tree structure of ingested documents for admin UI.
+    Tree: doc_type (folder) -> source (document) -> chunks with previews.
+    """
+    collection = vectorstore._collection
+    result = collection.get(include=["documents", "metadatas"])
+    docs = result["documents"]
+    metadatas = result["metadatas"]
+
+    # Build: doc_type -> source -> list of (preview, section)
+    structure = {}
+    for i, (content, meta) in enumerate(zip(docs, metadatas)):
+        doc_type = meta.get("doc_type") or meta.get("source", "").split("/")[0] or "unknown"
+        source = meta.get("source", "unknown")
+        section = meta.get("section") or meta.get("subsection") or ""
+        preview = (content or "")[:150].replace("\n", " ") + ("..." if len(content or "") > 150 else "")
+
+        if doc_type not in structure:
+            structure[doc_type] = {}
+        if source not in structure[doc_type]:
+            structure[doc_type][source] = []
+        structure[doc_type][source].append({"preview": preview, "section": section})
+
+    # Convert to tree format
+    tree = []
+    for doc_type in sorted(structure.keys()):
+        sources = structure[doc_type]
+        total_chunks = sum(len(chunks) for chunks in sources.values())
+        children = []
+        for source in sorted(sources.keys()):
+            chunks = sources[source]
+            children.append({
+                "name": source,
+                "type": "document",
+                "chunkCount": len(chunks),
+                "chunks": chunks,
+            })
+        tree.append({
+            "name": doc_type,
+            "type": "folder",
+            "chunkCount": total_chunks,
+            "children": children,
+        })
+
+    return {"tree": tree, "totalChunks": sum(n["chunkCount"] for n in tree)}

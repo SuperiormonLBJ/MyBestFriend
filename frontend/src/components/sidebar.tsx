@@ -10,7 +10,6 @@ import { useState } from "react";
 const navItems = [
   { href: "/chat", label: "Chatbot", icon: MessageCircle },
   { href: "/admin", label: "Admin Panel", icon: Settings },
-  { href: "/settings", label: "Settings", icon: SlidersHorizontal },
 ];
 
 export function Sidebar() {

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from rag_retrieval import generate_answer
+from rag_retrieval import generate_answer, get_knowledge_tree
 from utils.config_loader import ConfigLoader
 
 config = ConfigLoader()
@@ -68,3 +68,12 @@ def update_config(request: ConfigUpdateRequest):
         return config.get_full_config()
     config.update_and_save(updates)
     return config.get_full_config()
+
+
+@app.get("/api/knowledge")
+def knowledge_tree():
+    """Return tree structure of ingested documents for admin UI."""
+    try:
+        return get_knowledge_tree()
+    except Exception as e:
+        return {"tree": [], "totalChunks": 0, "error": str(e)}
