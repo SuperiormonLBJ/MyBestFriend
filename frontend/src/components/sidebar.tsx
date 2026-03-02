@@ -2,18 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageCircle, Settings, Moon, Sun, Menu } from "lucide-react";
+import { MessageCircle, Settings, SlidersHorizontal, Moon, Sun, Menu } from "lucide-react";
 import { useTheme } from "./theme-provider";
+import { useConfig } from "./config-provider";
 import { useState } from "react";
 
 const navItems = [
   { href: "/chat", label: "Chatbot", icon: MessageCircle },
   { href: "/admin", label: "Admin Panel", icon: Settings },
+  { href: "/settings", label: "Settings", icon: SlidersHorizontal },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
+  const { config } = useConfig();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -33,7 +36,7 @@ export function Sidebar() {
       >
       <div className="flex h-16 items-center gap-2 border-b border-[var(--border)] px-4">
         <h1 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)] text-glow">
-          MyBestFriend
+          {config.app_name}
         </h1>
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-3">

@@ -1,21 +1,19 @@
-# RAG / MyBestFriend Backend Configuration
-# Requires OPENAI_API_KEY in .env
-
 CHUNK_SIZE: 1000
 OVERLAP: 200
 TOP_K: 5
 SIMILARITY_THRESHOLD: 0.7
-
-# Vector DB path (relative to backend/)
-DB_NAME: "src/chroma_db"
-
-# Data directory (relative to backend/)
-DATA_DIR: "data"
-
-VECTOR_DB: "chroma"
-
-# OpenAI models
-EMBEDDING_MODEL: "text-embedding-3-large"
-GENERATOR_MODEL: "gpt-4o-mini"
-LLM_MODEL: "gpt-4o-mini"
-EVALUATOR_MODEL: "gpt-4o-mini"
+DB_NAME: src/chroma_db
+DATA_DIR: data
+VECTOR_DB: chroma
+EMBEDDING_MODEL: text-embedding-3-large
+GENERATOR_MODEL: gpt-4o
+LLM_MODEL: gpt-4o
+EVALUATOR_MODEL: gpt-4o
+frontend:
+  app_name: MyBestFriend
+  chat_title: Digital Twin
+  chat_subtitle: Ask anything about me — career, projects, hobbies, or daily life
+  input_placeholder: Ask anything about me...
+  empty_state_hint: Type a question or use the microphone for voice input
+  empty_state_examples: 'Try: "What is Beiji''s experience at UOB?" or "Tell me about
+    his hobbies"'

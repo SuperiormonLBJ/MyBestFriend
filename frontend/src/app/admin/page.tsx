@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { Database, FileText, Settings } from "lucide-react";
 
 export default function AdminPage() {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-full flex-1 flex-col">
       <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
         <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
           ADMIN PANEL
@@ -44,7 +45,10 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="group rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer sm:col-span-2">
+          <Link
+            href="/settings"
+            className="group block rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer sm:col-span-2"
+          >
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">
                 <Settings className="h-6 w-6" strokeWidth={2} />
@@ -52,11 +56,11 @@ export default function AdminPage() {
               <div>
                 <h3 className="font-semibold text-[var(--foreground)]">Settings</h3>
                 <p className="text-sm text-[var(--foreground-muted)]">
-                  Configure API endpoints and model parameters
+                  View and configure frontend display options
                 </p>
               </div>
             </div>
-          </div>
+          </Link>
         </div>
       </div>
     </div>

@@ -7,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from rag_retrieval import generate_answer
+from utils.config_loader import ConfigLoader
 
+config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
 
 app.add_middleware(
@@ -37,3 +39,32 @@ def chat(request: ChatRequest):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/config")
+def get_config():
+    """Return full editable config (frontend + models) from config.yaml."""
+    return config.get_full_config()
+
+
+class ConfigUpdateRequest(BaseModel):
+    app_name: str | None = None
+    chat_title: str | None = None
+    chat_subtitle: str | None = None
+    input_placeholder: str | None = None
+    empty_state_hint: str | None = None
+    empty_state_examples: str | None = None
+    embedding_model: str | None = None
+    generator_model: str | None = None
+    llm_model: str | None = None
+    evaluator_model: str | None = None
+
+
+@app.put("/api/config")
+def update_config(request: ConfigUpdateRequest):
+    """Update config values and persist to config.yaml."""
+    updates = {k: v for k, v in request.model_dump().items() if v is not None}
+    if not updates:
+        return config.get_full_config()
+    config.update_and_save(updates)
+    return config.get_full_config()

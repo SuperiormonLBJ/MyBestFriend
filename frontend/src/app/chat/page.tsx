@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { ChatInput } from "@/components/chat-input";
 import { ChatMessageBubble, type ChatMessage } from "@/components/chat-message";
 import { TypingIndicator } from "@/components/typing-indicator";
+import { useConfig } from "@/components/config-provider";
 
 async function fetchAnswer(message: string, history: { role: string; content: string }[]) {
   const res = await fetch("/api/chat", {
@@ -17,6 +18,7 @@ async function fetchAnswer(message: string, history: { role: string; content: st
 }
 
 export default function ChatPage() {
+  const { config } = useConfig();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -57,13 +59,13 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-full flex-1 flex-col">
       <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
         <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
-          DIGITAL TWIN
+          {config.chat_title.toUpperCase()}
         </h2>
         <p className="mt-1 text-sm text-[var(--foreground-muted)] font-body">
-          Ask anything about me — career, projects, hobbies, or daily life
+          {config.chat_subtitle}
         </p>
       </header>
 
@@ -76,10 +78,10 @@ export default function ChatPage() {
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
             <p className="text-[var(--foreground-muted)] font-body">
-              Type a question or use the microphone for voice input
+              {config.empty_state_hint}
             </p>
             <p className="text-sm text-[var(--foreground-muted)]/80 font-body">
-              Try: &quot;What is Beiji&apos;s experience at UOB?&quot; or &quot;Tell me about his hobbies&quot;
+              {config.empty_state_examples}
             </p>
           </div>
         )}
@@ -93,7 +95,11 @@ export default function ChatPage() {
 
       <div className="shrink-0 border-t border-[var(--border)] bg-[var(--background)] p-4">
         <div className="mx-auto max-w-3xl">
-          <ChatInput onSend={handleSend} disabled={loading} />
+          <ChatInput
+            onSend={handleSend}
+            disabled={loading}
+            placeholder={config.input_placeholder}
+          />
         </div>
       </div>
     </div>
