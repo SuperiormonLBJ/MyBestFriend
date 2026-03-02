@@ -59,10 +59,10 @@ export default function ChatPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
-        <h2 className="font-heading text-2xl font-semibold text-[var(--foreground)]">
-          Digital Twin
+        <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
+          DIGITAL TWIN
         </h2>
-        <p className="mt-1 text-sm text-[var(--foreground-muted)]">
+        <p className="mt-1 text-sm text-[var(--foreground-muted)] font-body">
           Ask anything about me — career, projects, hobbies, or daily life
         </p>
       </header>
@@ -75,10 +75,10 @@ export default function ChatPage() {
       >
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <p className="text-[var(--foreground-muted)]">
+            <p className="text-[var(--foreground-muted)] font-body">
               Type a question or use the microphone for voice input
             </p>
-            <p className="text-sm text-[var(--foreground-muted)]/80">
+            <p className="text-sm text-[var(--foreground-muted)]/80 font-body">
               Try: &quot;What is Beiji&apos;s experience at UOB?&quot; or &quot;Tell me about his hobbies&quot;
             </p>
           </div>

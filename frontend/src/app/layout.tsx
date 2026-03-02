@@ -19,7 +19,7 @@ export default function RootLayout({
         <ThemeProvider>
           <div className="flex min-h-screen">
             <Sidebar />
-            <main className="min-h-screen flex-1 flex-col bg-[var(--background)] pt-16 lg:ml-56 lg:pt-0 flex">
+            <main className="relative z-10 min-h-screen flex-1 flex-col bg-[var(--background)] pt-16 lg:ml-56 lg:pt-0 flex">
               {children}
             </main>
           </div>

@@ -1,36 +1,42 @@
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
 @import "tailwindcss";
 
 :root {
-  /* AI-Native UI Design System - Light */
-  --primary: #6366F1;
-  --primary-hover: #4F46E5;
-  --secondary: #818CF8;
-  --cta: #22C55E;
-  --cta-hover: #16A34A;
-  --background: #EEF2FF;
-  --background-elevated: #ffffff;
-  --foreground: #312E81;
-  --foreground-muted: #4C1D95;
-  --border: #E0E7FF;
-  --chat-user-bg: #6366F1;
-  --chat-assistant-bg: #E0E7FF;
+  /* Video-game / Cyberpunk — Light variant (charcoal blue) */
+  --primary: #00A8CC;
+  --primary-hover: #0096B8;
+  --primary-glow: rgba(0, 168, 204, 0.35);
+  --secondary: #7B2CBF;
+  --cta: #00F5D4;
+  --cta-hover: #00E5C4;
+  --background: #0F1629;
+  --background-elevated: #1A2442;
+  --foreground: #E2EAF2;
+  --foreground-muted: #8FA3BC;
+  --border: #2A3F5C;
+  --border-glow: rgba(0, 168, 204, 0.25);
+  --chat-user-bg: #007EA7;
+  --chat-assistant-bg: #162238;
+  --surface: #141C2B;
 }
 
 .dark {
-  /* AI-Native UI Design System - Dark */
-  --primary: #818CF8;
-  --primary-hover: #6366F1;
-  --secondary: #A5B4FC;
-  --cta: #22C55E;
-  --cta-hover: #4ADE80;
-  --background: #0F0F1A;
-  --background-elevated: #1A1A2E;
-  --foreground: #E0E7FF;
-  --foreground-muted: #A5B4FC;
-  --border: #312E81;
-  --chat-user-bg: #4338CA;
-  --chat-assistant-bg: #1E1B4B;
+  /* Video-game / Cyberpunk — Dark (deep space) */
+  --primary: #00D4FF;
+  --primary-hover: #00B8E6;
+  --primary-glow: rgba(0, 212, 255, 0.4);
+  --secondary: #A855F7;
+  --cta: #00F5D4;
+  --cta-hover: #5EFFE3;
+  --background: #08090C;
+  --background-elevated: #0F1115;
+  --foreground: #E8F4F8;
+  --foreground-muted: #7B8FA1;
+  --border: #1E2836;
+  --border-glow: rgba(0, 212, 255, 0.3);
+  --chat-user-bg: #0099CC;
+  --chat-assistant-bg: #121920;
+  --surface: #0C0E12;
 }
 
 @theme inline {
@@ -45,12 +51,17 @@
   --color-border: var(--border);
   --color-chat-user-bg: var(--chat-user-bg);
   --color-chat-assistant-bg: var(--chat-assistant-bg);
-  --font-heading: 'Caveat', cursive;
-  --font-body: 'Quicksand', sans-serif;
+  --font-heading: 'Orbitron', sans-serif;
+  --font-body: 'Exo 2', sans-serif;
 }
 
 .font-heading {
   font-family: var(--font-heading);
+  letter-spacing: 0.02em;
+}
+
+.font-body {
+  font-family: var(--font-body);
 }
 
 body {
@@ -60,8 +71,35 @@ body {
   transition: background-color 150ms ease, color 150ms ease;
 }
 
+/* Subtle grid overlay for video-game HUD feel */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+  z-index: 0;
+}
+
 h1, h2, h3 {
   font-family: var(--font-heading);
+  font-weight: 600;
+}
+
+/* Video-game style glow */
+.glow-border {
+  box-shadow: 0 0 12px var(--primary-glow), inset 0 0 0 1px var(--border-glow);
+}
+
+.glow-border-hover:hover {
+  box-shadow: 0 0 18px var(--primary-glow), 0 0 36px var(--primary-glow);
+}
+
+.text-glow {
+  text-shadow: 0 0 12px var(--primary-glow);
 }
 
 @media (prefers-reduced-motion: reduce) {
