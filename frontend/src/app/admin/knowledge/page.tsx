@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   ChevronRight,
@@ -13,6 +13,14 @@ import {
   Plus,
   Trash2,
   RotateCw,
+  Sparkles,
+  Eye,
+  ArrowLeft,
+  BrainCircuit,
+  Loader2,
+  Zap,
+  TriangleAlert,
+  X,
 } from "lucide-react";
 
 type ChunkInfo = { preview: string; section: string };
@@ -37,7 +45,195 @@ type TreeData = {
   error?: string;
 };
 
-const DOC_TYPES = ["projects", "career", "cv", "personal", "misc"];
+const DOC_TYPES = ["project", "career", "cv", "personal", "misc"];
+
+const PHASE_MESSAGES: Record<string, string[]> = {
+  restructure: [
+    "Analyzing raw text…",
+    "Mapping document structure…",
+    "Generating frontmatter…",
+    "Structuring sections…",
+    "Applying RAG signals…",
+    "Polishing markdown…",
+  ],
+  ingest: [
+    "Parsing markdown…",
+    "Splitting into chunks…",
+    "Computing embeddings…",
+    "Writing to vector store…",
+    "Indexing metadata…",
+  ],
+  reingest: [
+    "Loading all documents…",
+    "Rebuilding chunk tree…",
+    "Generating embeddings…",
+    "Replacing vector store…",
+    "Finalizing index…",
+  ],
+};
+
+function useSimulatedProgress(active: boolean) {
+  const [pct, setPct] = useState(0);
+  const rafRef = useRef<number | null>(null);
+  const startRef = useRef(0);
+
+  useEffect(() => {
+    if (!active) {
+      if (pct > 0) {
+        setPct(100);
+        const t = setTimeout(() => setPct(0), 500);
+        return () => clearTimeout(t);
+      }
+      return;
+    }
+    startRef.current = Date.now();
+    setPct(0);
+    const tick = () => {
+      const elapsed = (Date.now() - startRef.current) / 1000;
+      // Fast at first, asymptotically approaches 92%
+      const next = 92 * (1 - Math.exp(-elapsed / 12));
+      setPct(Math.min(next, 92));
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [active]);
+
+  return pct;
+}
+
+function ProcessingOverlay({
+  phase,
+}: {
+  phase: "restructure" | "ingest" | "reingest";
+}) {
+  const [msgIdx, setMsgIdx] = useState(0);
+  const messages = PHASE_MESSAGES[phase];
+
+  useEffect(() => {
+    setMsgIdx(0);
+    const iv = setInterval(() => {
+      setMsgIdx((i) => (i + 1) % messages.length);
+    }, 2800);
+    return () => clearInterval(iv);
+  }, [phase, messages.length]);
+
+  const Icon = phase === "restructure" ? BrainCircuit : phase === "ingest" ? Zap : Loader2;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--background)]/80 backdrop-blur-sm">
+      {/* Scanline effect */}
+      <div
+        className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.04]"
+        aria-hidden
+      >
+        <div
+          className="absolute left-0 w-full h-16 bg-gradient-to-b from-transparent via-[var(--primary)] to-transparent"
+          style={{ animation: "scanline 3s linear infinite" }}
+        />
+      </div>
+
+      <div className="relative w-full max-w-sm mx-4 rounded-xl border border-[var(--border)] bg-[var(--background-elevated)] p-8 glow-border text-center space-y-6">
+        <div className="flex justify-center">
+          <div className="relative">
+            <Icon
+              className={`h-12 w-12 text-[var(--primary)] ${
+                phase === "restructure" ? "animate-pulse" : "animate-spin"
+              }`}
+              style={{ animationDuration: phase === "restructure" ? "1.5s" : "2s" }}
+            />
+            <div className="absolute inset-0 rounded-full blur-xl bg-[var(--primary)] opacity-20 animate-pulse" />
+          </div>
+        </div>
+
+        <div>
+          <h4 className="font-heading text-lg font-bold tracking-wider text-[var(--primary)] mb-1">
+            {phase === "restructure"
+              ? "RESTRUCTURING"
+              : phase === "ingest"
+                ? "INGESTING"
+                : "RE-INGESTING ALL"}
+          </h4>
+          <p className="text-sm text-[var(--foreground-muted)] h-5 transition-opacity duration-300">
+            {messages[msgIdx]}
+          </p>
+        </div>
+
+        <div className="progress-bar-track">
+          <div className="progress-bar-fill" id="overlay-progress" />
+        </div>
+
+        <p className="text-xs text-[var(--foreground-muted)]/60 font-body">
+          Please wait — do not navigate away
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--background)]/80 backdrop-blur-sm">
+      <div className="relative w-full max-w-md mx-4 rounded-xl border border-red-500/40 bg-[var(--background-elevated)] p-6 space-y-5 shadow-lg shadow-red-500/10">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="absolute top-4 right-4 text-[var(--foreground-muted)] hover:text-[var(--foreground)] transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="flex items-start gap-4">
+          <div className="shrink-0 flex items-center justify-center w-10 h-10 rounded-full bg-red-500/15">
+            <TriangleAlert className="h-5 w-5 text-red-400" />
+          </div>
+          <div>
+            <h4 className="font-heading text-base font-bold tracking-wider text-[var(--foreground)]">
+              {title}
+            </h4>
+            <p className="mt-1 text-sm text-[var(--foreground-muted)] leading-relaxed">
+              {message}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 transition-colors"
+          >
+            {confirmLabel ?? "Confirm"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function TreeFolder({
   node,
@@ -172,7 +368,39 @@ export default function KnowledgePage() {
   const [adding, setAdding] = useState(false);
   const [ingesting, setIngesting] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ filename: "", doc_type: "projects", content: "" });
+  const [restructureLoading, setRestructureLoading] = useState(false);
+  type AddStep = "input" | "review";
+  const [addStep, setAddStep] = useState<AddStep>("input");
+  const [addForm, setAddForm] = useState({
+    rawText: "",
+    doc_type: "career",
+    year: "",
+    importance: "medium",
+    filename: "",
+    content: "",
+  });
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const busyPhase = restructureLoading
+    ? "restructure"
+    : adding
+      ? "ingest"
+      : ingesting
+        ? "reingest"
+        : null;
+  const isBusy = busyPhase !== null;
+  const progressPct = useSimulatedProgress(isBusy);
+
+  // Drive the CSS width of the overlay progress bar
+  useEffect(() => {
+    const el = document.getElementById("overlay-progress");
+    if (el) el.style.width = `${progressPct}%`;
+  }, [progressPct]);
 
   const fetchTree = async () => {
     setLoading(true);
@@ -191,23 +419,58 @@ export default function KnowledgePage() {
     fetchTree();
   }, []);
 
-  const handleDelete = async (source: string, docType: string) => {
-    if (!confirm(`Delete "${source}" and all its chunks? This cannot be undone.`)) return;
-    setDeleting(source);
+  const handleDelete = (source: string, docType: string) => {
+    setConfirmDialog({
+      title: "Delete document",
+      message: `Delete "${source}" and all its chunks? This cannot be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setDeleting(source);
+        setMessage(null);
+        try {
+          const res = await fetch(
+            `/api/documents/${encodeURIComponent(source)}?doc_type=${encodeURIComponent(docType)}`,
+            { method: "DELETE" }
+          );
+          const resData = await res.json();
+          if (resData.error) throw new Error(resData.error);
+          setMessage({ type: "success", text: `Deleted ${source} (${resData.deleted_chunks ?? 0} chunks)` });
+          await fetchTree();
+        } catch (err) {
+          setMessage({ type: "error", text: err instanceof Error ? err.message : "Delete failed" });
+        } finally {
+          setDeleting(null);
+        }
+      },
+    });
+  };
+
+  const handleRestructure = async () => {
+    if (!addForm.rawText.trim()) return;
+    setRestructureLoading(true);
     setMessage(null);
     try {
-      const res = await fetch(
-        `/api/documents/${encodeURIComponent(source)}?doc_type=${encodeURIComponent(docType)}`,
-        { method: "DELETE" }
-      );
+      const res = await fetch("/api/restructure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          raw_text: addForm.rawText.trim(),
+          doc_type: addForm.doc_type,
+          year: addForm.year.trim() || undefined,
+          importance: addForm.importance,
+        }),
+      });
       const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || resData.detail || "Restructure failed");
       if (resData.error) throw new Error(resData.error);
-      setMessage({ type: "success", text: `Deleted ${source} (${resData.deleted_chunks ?? 0} chunks)` });
-      await fetchTree();
+      setAddForm((p) => ({ ...p, content: resData.restructured_md ?? "" }));
+      setAddStep("review");
+      setMessage({ type: "success", text: "Restructured. Review the markdown below and edit if needed, then confirm to ingest." });
     } catch (err) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Delete failed" });
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Restructure failed" });
     } finally {
-      setDeleting(null);
+      setRestructureLoading(false);
     }
   };
 
@@ -230,7 +493,8 @@ export default function KnowledgePage() {
       if (!res.ok) throw new Error(resData.detail || resData.error || `HTTP ${res.status}`);
       if (resData.error) throw new Error(resData.error);
       setMessage({ type: "success", text: `Added ${addForm.filename} (${resData.chunks_added ?? 0} chunks)` });
-      setAddForm({ filename: "", doc_type: "projects", content: "" });
+      setAddForm({ rawText: "", doc_type: "career", year: "", importance: "medium", filename: "", content: "" });
+      setAddStep("input");
       setShowAdd(false);
       await fetchTree();
     } catch (err) {
@@ -240,36 +504,47 @@ export default function KnowledgePage() {
     }
   };
 
-  const handleReingest = async () => {
-    if (
-      !confirm(
-        "Re-ingest all documents from the data folder? This will replace the current vector store. Continue?"
-      )
-    )
-      return;
-    setIngesting(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/ingest", { method: "POST" });
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || resData.detail || `HTTP ${res.status}`);
-      setMessage({
-        type: "success",
-        text: `Re-ingestion complete. ${resData.chunks_count ?? 0} chunks in vector store.`,
-      });
-      await fetchTree();
-    } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Re-ingestion failed",
-      });
-    } finally {
-      setIngesting(false);
-    }
+  const handleReingest = () => {
+    setConfirmDialog({
+      title: "Re-ingest all documents",
+      message: "This will replace the current vector store with freshly ingested documents from the data folder. Continue?",
+      confirmLabel: "Re-ingest",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setIngesting(true);
+        setMessage(null);
+        try {
+          const res = await fetch("/api/ingest", { method: "POST" });
+          const resData = await res.json();
+          if (!res.ok) throw new Error(resData.error || resData.detail || `HTTP ${res.status}`);
+          setMessage({
+            type: "success",
+            text: `Re-ingestion complete. ${resData.chunks_count ?? 0} chunks in vector store.`,
+          });
+          await fetchTree();
+        } catch (err) {
+          setMessage({
+            type: "error",
+            text: err instanceof Error ? err.message : "Re-ingestion failed",
+          });
+        } finally {
+          setIngesting(false);
+        }
+      },
+    });
   };
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
+      {busyPhase && <ProcessingOverlay phase={busyPhase} />}
+      <ConfirmModal
+        open={confirmDialog !== null}
+        title={confirmDialog?.title ?? ""}
+        message={confirmDialog?.message ?? ""}
+        confirmLabel={confirmDialog?.confirmLabel}
+        onConfirm={() => confirmDialog?.onConfirm()}
+        onCancel={() => setConfirmDialog(null)}
+      />
       <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
@@ -334,70 +609,160 @@ export default function KnowledgePage() {
           )}
 
           {showAdd && (
-            <form
-              onSubmit={handleAdd}
-              className="rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6"
-            >
-              <h3 className="mb-4 font-semibold text-[var(--foreground)]">Add new document</h3>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6">
+              <h3 className="mb-4 font-semibold text-[var(--foreground)]">
+                {addStep === "input" ? "Add new document (raw text → AI structure → review)" : "Review & ingest"}
+              </h3>
+
+              {addStep === "input" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
+                        Type
+                      </label>
+                      <select
+                        value={addForm.doc_type}
+                        onChange={(e) => setAddForm((p) => ({ ...p, doc_type: e.target.value }))}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
+                      >
+                        {DOC_TYPES.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
+                        Year
+                      </label>
+                      <input
+                        type="text"
+                        value={addForm.year}
+                        onChange={(e) => setAddForm((p) => ({ ...p, year: e.target.value }))}
+                        placeholder="e.g. 2023"
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)]/60"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
+                        Importance
+                      </label>
+                      <select
+                        value={addForm.importance}
+                        onChange={(e) => setAddForm((p) => ({ ...p, importance: e.target.value }))}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
+                      >
+                        <option value="high">high</option>
+                        <option value="medium">medium</option>
+                        <option value="low">low</option>
+                      </select>
+                    </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
-                      Filename (.md)
+                      Raw text (resume, notes, LinkedIn paste, etc.)
                     </label>
-                    <input
-                      type="text"
-                      value={addForm.filename}
-                      onChange={(e) => setAddForm((p) => ({ ...p, filename: e.target.value }))}
-                      placeholder="my-doc.md"
-                      className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)]/60"
+                    <textarea
+                      value={addForm.rawText}
+                      onChange={(e) => setAddForm((p) => ({ ...p, rawText: e.target.value }))}
+                      placeholder="Paste any unstructured text here. The AI will restructure it into RAG-ready markdown (like career/project format)."
+                      rows={12}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)]/60 font-mono text-sm"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
-                      Category
-                    </label>
-                    <select
-                      value={addForm.doc_type}
-                      onChange={(e) => setAddForm((p) => ({ ...p, doc_type: e.target.value }))}
-                      className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRestructure}
+                      disabled={restructureLoading || !addForm.rawText.trim()}
+                      className="flex items-center gap-2 rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--background)] hover:bg-[var(--primary-hover)] disabled:opacity-50"
                     >
-                      {DOC_TYPES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                      <Sparkles className={`h-4 w-4 ${restructureLoading ? "animate-pulse" : ""}`} />
+                      {restructureLoading ? "Restructuring…" : "Restructure with AI"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowAdd(false); setAddStep("input"); setAddForm({ rawText: "", doc_type: "career", year: "", importance: "medium", filename: "", content: "" }); }}
+                      className="rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
-                    Markdown content
-                  </label>
-                  <textarea
-                    value={addForm.content}
-                    onChange={(e) => setAddForm((p) => ({ ...p, content: e.target.value }))}
-                    placeholder="# Title&#10;&#10;Your content here..."
-                    rows={10}
-                    className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)]/60 font-mono text-sm"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    disabled={adding || !addForm.filename.trim() || !addForm.content.trim()}
-                    className="rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--background)] hover:bg-[var(--primary-hover)] disabled:opacity-50"
-                  >
-                    {adding ? "Adding…" : "Add document"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdd(false)}
-                    className="rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </form>
+              )}
+
+              {addStep === "review" && (
+                <form onSubmit={handleAdd} className="space-y-4">
+                  <p className="text-sm text-[var(--foreground-muted)] flex items-center gap-2">
+                    <Eye className="h-4 w-4" />
+                    Edit the markdown below if needed, then set filename and confirm to ingest.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
+                        Filename (.md)
+                      </label>
+                      <input
+                        type="text"
+                        value={addForm.filename}
+                        onChange={(e) => setAddForm((p) => ({ ...p, filename: e.target.value }))}
+                        placeholder="my-doc.md"
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)]/60"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={addForm.doc_type}
+                        onChange={(e) => setAddForm((p) => ({ ...p, doc_type: e.target.value }))}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)]"
+                      >
+                        {DOC_TYPES.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--foreground-muted)] mb-1">
+                      Markdown (editable before ingest)
+                    </label>
+                    <textarea
+                      value={addForm.content}
+                      onChange={(e) => setAddForm((p) => ({ ...p, content: e.target.value }))}
+                      rows={14}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[var(--foreground)] font-mono text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="submit"
+                      disabled={adding || !addForm.filename.trim() || !addForm.content.trim()}
+                      className="rounded-md bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--background)] hover:opacity-90 disabled:opacity-50"
+                    >
+                      {adding ? "Ingesting…" : "Confirm & Ingest"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddStep("input")}
+                      className="flex items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Back to edit raw text
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowAdd(false); setAddStep("input"); setAddForm({ rawText: "", doc_type: "career", year: "", importance: "medium", filename: "", content: "" }); }}
+                      className="rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
 
           <div>

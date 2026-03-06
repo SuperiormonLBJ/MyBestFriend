@@ -97,3 +97,37 @@ Respond only with a short, refined question that you will use to search the Know
 It should be a VERY short specific question most likely to surface content. Focus on the question details.
 IMPORTANT: Respond ONLY with the precise knowledgebase query, nothing else.
 """
+
+# Instruction for restructuring raw text into RAG-ready markdown (structure varies by doc type)
+RESTRUCTURE_TO_MD_PROMPT = """You are a document structuring assistant. You will receive raw, unstructured text and must restructure it into a clean markdown document for a RAG knowledge base.
+
+**Document type for this task:** {user_type}
+
+The reference below is an example for this document type. You MUST follow its section layout, heading style, and conventions so the output matches that type.
+
+## Reference document (follow this structure and style)
+
+```
+{reference_md}
+```
+
+## User-provided metadata (put these in frontmatter)
+
+- **type**: {user_type} (use exactly this value)
+- **year**: {user_year}
+- **importance**: {user_importance} (use exactly this value)
+
+If year says "(infer from content if possible, else omit)", infer from the content or omit the year field.
+
+## Rules
+
+1. **Frontmatter**: YAML between --- lines. Include type, title, importance, year (if provided or inferred), and tags. **Generate title** from the content (job title, project name, or short descriptive title). **Generate tags** as a YAML array of kebab-case keywords from the content.
+2. **Structure by type**: Follow the reference's section order and headings. For **career**: Role Overview, Key Projects (with Problem/Actions/Impact/Skills per project), Publications, RAG Signals. For **projects**/project: Overview (Domain, Role, Summary), Problem (Pain), Solution/Architecture (pipelines or subsections), Challenges, Results, RAG Signals. For **cv**: Career Summary, Work Experience, Project Experience, Education, Skills (match reference layout). For **personal**: themed sections (e.g. per hobby or topic) with Context, Skills Developed, Personal Insight; end with Personality Signals or similar.
+3. **Content**: Preserve all factual content from the user's raw text. Do not invent information. Omit sections that have no content or use "N/A" where appropriate.
+4. **RAG Signals**: End with a short bullet list of retrieval-friendly phrases and keywords that summarize the document.
+5. Output only valid markdown. No commentary before or after.
+
+## Raw text from user
+
+{raw_text}
+"""

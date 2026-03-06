@@ -14,6 +14,16 @@ from rag_ingestion import (
 )
 
 
+DOC_TYPE_TO_FOLDER = {
+    "project": "projects",
+}
+
+
+def _resolve_folder(doc_type: str) -> str:
+    """Map doc_type to the actual folder name on disk (e.g. 'project' -> 'projects')."""
+    return DOC_TYPE_TO_FOLDER.get(doc_type, doc_type)
+
+
 def _sanitize_metadata(meta: dict) -> dict:
     """Chroma accepts only str, int, float, bool. Convert others to str."""
     out = {}
@@ -50,7 +60,8 @@ def delete_document(source: str, doc_type: str | None = None) -> dict:
         # Find and delete the .md file
         data_path = Path(DATA_DIR)
         if doc_type:
-            candidate = data_path / doc_type / source
+            folder_name = _resolve_folder(doc_type)
+            candidate = data_path / folder_name / source
             if candidate.exists():
                 candidate.unlink()
                 result["deleted_file"] = str(candidate)
@@ -81,7 +92,7 @@ def add_document(content: str, filename: str, doc_type: str) -> dict:
 
         # Save to disk
         data_path = Path(DATA_DIR)
-        folder = data_path / doc_type
+        folder = data_path / _resolve_folder(doc_type)
         folder.mkdir(parents=True, exist_ok=True)
         file_path = folder / filename
         file_path.write_text(content, encoding="utf-8")
