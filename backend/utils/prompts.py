@@ -98,14 +98,309 @@ It should be a VERY short specific question most likely to surface content. Focu
 IMPORTANT: Respond ONLY with the precise knowledgebase query, nothing else.
 """
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Inline reference templates — one per doc_type.
+# These are self-contained and never depend on any files on disk, so they work
+# for any fresh setup that has no existing data documents.
+# ──────────────────────────────────────────────────────────────────────────────
+
+REFERENCE_TEMPLATES: dict[str, str] = {
+    "career": """\
+---
+type: career
+title: <Generated: job title or role name>
+importance: <user-provided>
+year: <user-provided or inferred>
+tags: [<generated kebab-case keywords>]
+---
+
+## 1. Role Overview
+
+**Position:** <Job title>
+**Duration:** <Start – End, e.g. Jan 2022 – Dec 2023>
+**Location:** <City / Remote>
+
+Focus:
+- <Main responsibility 1>
+- <Main responsibility 2>
+
+## 2. Key Projects
+
+### 2.1 <Project or Initiative Name>
+
+**Problem / Pain Points**
+- <What was broken, missing, or inefficient>
+
+**Actions**
+- <What was built or done>
+
+**Impact / Results**
+- <Quantified outcome or improvement>
+
+**Skills / Signals**
+<keyword1>, <keyword2>, <keyword3>
+
+### 2.2 <Another Project>
+
+**Problem / Pain Points**
+- ...
+
+**Actions**
+- ...
+
+**Impact / Results**
+- ...
+
+**Skills / Signals**
+<keyword1>, <keyword2>
+
+## 3. Publications
+
+(List any papers, conference talks, or reports. Omit if none.)
+
+## 4. RAG Signals / Career Retrieval
+
+- <Retrieval-friendly phrase 1>
+- <Retrieval-friendly phrase 2>
+- <Tech stack keywords>
+""",
+
+    "project": """\
+---
+type: project
+title: <Generated: project name>
+importance: <user-provided>
+year: <user-provided or inferred>
+tags: [<generated kebab-case keywords>]
+---
+
+## 1. Overview
+
+**Domain:** <e.g. Computer Vision / FinTech / NLP>
+**Role:** <Your role on the project>
+**Duration:** <e.g. 3 months / academic project / side project>
+
+**Summary:**
+<One or two sentences describing what the project does and why it matters.>
+
+## 2. Problem (Pain)
+
+<Describe the core problem being solved. Include pain points and why existing solutions were insufficient.>
+
+Challenges:
+- <Challenge 1>
+- <Challenge 2>
+
+## 3. Solution / Architecture
+
+### <Pipeline or Component Name>
+
+**Input**
+- <What data or input the system receives>
+
+**Processing**
+- <Key steps, algorithms, or models used>
+
+**Output**
+- <What the system produces>
+
+## 4. Tech Stack
+
+- <Category: tools/frameworks>
+- <Category: tools/frameworks>
+
+## 5. Challenges
+
+### <Challenge Name>
+
+<Description of the challenge and how it was solved.>
+
+## 6. Results
+
+- <Metric or outcome 1>
+- <Metric or outcome 2>
+
+## 7. RAG Signals / Project Retrieval
+
+- <Retrieval-friendly phrase 1>
+- <Tech keywords>
+""",
+
+    "cv": """\
+---
+type: cv
+title: Resume
+importance: <user-provided>
+year: <user-provided or inferred>
+tags: [cv, resume, <generated skill keywords>]
+---
+
+## <Full Name>
+
+Email: <email>
+LinkedIn: <url>
+GitHub: <url>
+Portfolio: <url>
+
+---
+
+## 1. Career Summary
+
+<2–4 sentence professional summary. Focus, domain, and goals.>
+
+---
+
+## 2. Work Experience
+
+### <Job Title> — [<Company Name>]
+<Start> – <End or Present>
+
+#### Core Domains
+- <Domain 1>
+- <Domain 2>
+
+#### Key Contributions
+
+**<Initiative or Feature Name>**
+- <What was built and impact>
+
+**<Another Initiative>**
+- <What was built and impact>
+
+---
+
+## 3. Project Experience
+
+### <Project Name>
+<Date>
+
+Context: <Brief context, e.g. hackathon, side project>
+
+#### Architecture
+- Backend: <stack>
+- Frontend: <stack>
+- Deployment: <platform>
+
+#### Contributions
+- <Contribution 1>
+- <Contribution 2>
+
+---
+
+## 4. Education
+
+### <Degree> — <Institution>
+<Year>
+
+Focus: <Major or specialisation>
+
+---
+
+## 5. Skills
+
+**Languages & Frameworks:** <list>
+**Cloud & DevOps:** <list>
+**AI / ML:** <list>
+**Tools:** <list>
+""",
+
+    "personal": """\
+---
+type: personal
+title: <Generated: e.g. Hobbies & Personal Development>
+importance: <user-provided>
+year: <user-provided or inferred>
+tags: [<generated kebab-case keywords>]
+---
+
+## 1. <Hobby or Topic Name>
+
+Context:
+<Background — when started, why, how long.>
+
+Experience / Highlights:
+- <Milestone or achievement>
+- <Milestone or achievement>
+
+Skills Developed:
+- <Skill or trait 1>
+- <Skill or trait 2>
+
+Personal Insight:
+<One sentence connecting this hobby to professional or personal growth.>
+
+## 2. <Another Hobby or Topic>
+
+Context:
+...
+
+Experience / Highlights:
+- ...
+
+Skills Developed:
+- ...
+
+Personal Insight:
+...
+
+## 3. Personality Signals (Used for Behavioural Reasoning)
+
+<Trait>:
+- <Supporting evidence from hobbies>
+
+<Trait>:
+- <Supporting evidence>
+""",
+
+    "misc": """\
+---
+type: misc
+title: <Generated: descriptive title>
+importance: <user-provided>
+year: <user-provided or inferred>
+tags: [<generated kebab-case keywords>]
+---
+
+## 1. Overview
+
+<Brief description of what this document covers.>
+
+## 2. Key Points
+
+- <Point 1>
+- <Point 2>
+- <Point 3>
+
+## 3. Details
+
+<Expanded content, subsections as needed.>
+
+## 4. RAG Signals
+
+- <Retrieval-friendly phrase 1>
+- <Keyword 1>, <Keyword 2>
+""",
+}
+
+# Default fallback if an unknown doc_type is requested
+REFERENCE_TEMPLATES["default"] = REFERENCE_TEMPLATES["misc"]
+
+
+def get_reference_template(doc_type: str) -> str:
+    """Return the built-in reference template for the given doc_type.
+    Never reads from disk — works for any fresh setup with no existing data files.
+    """
+    return REFERENCE_TEMPLATES.get(doc_type, REFERENCE_TEMPLATES["default"])
+
+
 # Instruction for restructuring raw text into RAG-ready markdown (structure varies by doc type)
 RESTRUCTURE_TO_MD_PROMPT = """You are a document structuring assistant. You will receive raw, unstructured text and must restructure it into a clean markdown document for a RAG knowledge base.
 
 **Document type for this task:** {user_type}
 
-The reference below is an example for this document type. You MUST follow its section layout, heading style, and conventions so the output matches that type.
+The reference below is a canonical template for this document type. You MUST follow its section layout, heading style, and field conventions. Replace all placeholder text in angle brackets with real content from the user's raw text.
 
-## Reference document (follow this structure and style)
+## Reference template (follow this structure exactly)
 
 ```
 {reference_md}
@@ -121,11 +416,11 @@ If year says "(infer from content if possible, else omit)", infer from the conte
 
 ## Rules
 
-1. **Frontmatter**: YAML between --- lines. Include type, title, importance, year (if provided or inferred), and tags. **Generate title** from the content (job title, project name, or short descriptive title). **Generate tags** as a YAML array of kebab-case keywords from the content.
-2. **Structure by type**: Follow the reference's section order and headings. For **career**: Role Overview, Key Projects (with Problem/Actions/Impact/Skills per project), Publications, RAG Signals. For **projects**/project: Overview (Domain, Role, Summary), Problem (Pain), Solution/Architecture (pipelines or subsections), Challenges, Results, RAG Signals. For **cv**: Career Summary, Work Experience, Project Experience, Education, Skills (match reference layout). For **personal**: themed sections (e.g. per hobby or topic) with Context, Skills Developed, Personal Insight; end with Personality Signals or similar.
-3. **Content**: Preserve all factual content from the user's raw text. Do not invent information. Omit sections that have no content or use "N/A" where appropriate.
-4. **RAG Signals**: End with a short bullet list of retrieval-friendly phrases and keywords that summarize the document.
-5. Output only valid markdown. No commentary before or after.
+1. **Frontmatter**: YAML between --- lines. Use the user-provided type, year, and importance exactly. Generate `title` from the content (job title, project name, or descriptive title). Generate `tags` as a YAML array of kebab-case keywords derived from the content.
+2. **Structure**: Follow the reference template section-by-section. Keep all sections present in the template; write "N/A" or omit a subsection only if the user's text has genuinely no content for it.
+3. **Content**: Preserve every factual detail from the user's raw text. Do not invent information.
+4. **RAG Signals**: End with a bullet list of retrieval-friendly phrases and keywords summarising the document.
+5. Output only valid markdown. No commentary, no code fences, no extra text before or after.
 
 ## Raw text from user
 

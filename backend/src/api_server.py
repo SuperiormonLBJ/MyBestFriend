@@ -2,33 +2,19 @@
 FastAPI server for the MyBestFriend chatbot.
 Run with: uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
 """
-from pathlib import Path
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from rag_retrieval import generate_answer, get_knowledge_tree, reload_vectorstore
 from utils.config_loader import ConfigLoader
-from utils.prompts import RESTRUCTURE_TO_MD_PROMPT
+from utils.prompts import RESTRUCTURE_TO_MD_PROMPT, get_reference_template
 from document_ops import delete_document, add_document
 from rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 config = ConfigLoader()
-BACKEND_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = BACKEND_ROOT / "data"
-
-# One reference .md per doc_type so the LLM follows the right structure
-REFERENCE_BY_TYPE = {
-    "career": DATA_DIR / "career" / "NUS-Research-Engineer.md",
-    "projects": DATA_DIR / "projects" / "NUS-Master-Project.md",
-    "project": DATA_DIR / "projects" / "NUS-Master-Project.md",
-    "cv": DATA_DIR / "cv" / "cv.md",
-    "personal": DATA_DIR / "personal" / "hobby.md",
-    "misc": DATA_DIR / "career" / "NUS-Research-Engineer.md",
-}
 app = FastAPI(title="MyBestFriend API")
 
 app.add_middleware(
@@ -111,36 +97,6 @@ class RestructureRequest(BaseModel):
     importance: str = "medium"
 
 
-def _get_reference_md(doc_type: str) -> str:
-    """Load reference markdown for the given doc_type so the LLM follows the right structure."""
-    path = REFERENCE_BY_TYPE.get(doc_type) or REFERENCE_BY_TYPE.get("career")
-    if path and path.exists():
-        return path.read_text(encoding="utf-8")
-    return """---
-type: career
-title: Example Role
-importance: high
-year: 2023
-tags: [example, role]
----
-
-## 1. Role Overview
-**Position:** ...
-**Duration:** ...
-**Location:** ...
-
-## 2. Key Projects
-### 2.1 Project Name
-**Problem / Pain Points**
-**Actions**
-**Impact / Results**
-**Skills / Signals**
-
-## 3. Publications
-## 4. RAG Signals / Career Retrieval
-"""
-
-
 def _inject_frontmatter_override(
     content: str,
     type_val: str,
@@ -169,7 +125,7 @@ def api_restructure(request: RestructureRequest):
     """Restructure raw text into RAG-ready markdown using the reference format for the doc_type. Does not ingest."""
     if not request.raw_text.strip():
         raise HTTPException(status_code=400, detail="raw_text cannot be empty")
-    reference_md = _get_reference_md(request.doc_type)
+    reference_md = get_reference_template(request.doc_type)
     year_val = (request.year or "").strip() or None
     importance_val = (request.importance or "medium").strip().lower()
     if importance_val not in ("high", "medium", "low"):
