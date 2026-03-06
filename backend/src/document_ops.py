@@ -1,7 +1,9 @@
 """
 Document operations for Admin: add/delete documents and their chunks in the vector store.
+Also syncs to Supabase `documents` table as cloud storage.
 """
 import os
+import sys
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -12,6 +14,13 @@ from rag_ingestion import (
     _parse_md_frontmatter,
     create_chunks_markdown,
 )
+
+# Add project root so utils/ is importable when running from src/
+_project_root = Path(__file__).parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+from utils.supabase_client import supabase_client
 
 
 DOC_TYPE_TO_FOLDER = {
@@ -39,23 +48,49 @@ def _sanitize_metadata(meta: dict) -> dict:
     return out
 
 
+def _sync_delete_supabase(filename: str, doc_type: str | None) -> None:
+    """Remove document row(s) from Supabase. Errors are logged but not raised."""
+    try:
+        query = supabase_client.table("documents").delete().eq("filename", filename)
+        if doc_type:
+            query = query.eq("doc_type", doc_type)
+        query.execute()
+        print(f"[document_ops] Supabase: deleted document row for {filename}")
+    except Exception as e:
+        print(f"[document_ops] Supabase delete warning (non-fatal): {e}")
+
+
+def _sync_upsert_supabase(filename: str, doc_type: str, content: str) -> None:
+    """Upsert document row into Supabase. Errors are logged but not raised."""
+    try:
+        supabase_client.table("documents").upsert(
+            {"filename": filename, "doc_type": doc_type, "content": content},
+            on_conflict="filename,doc_type",
+        ).execute()
+        print(f"[document_ops] Supabase: upserted document row for {filename}")
+    except Exception as e:
+        print(f"[document_ops] Supabase upsert warning (non-fatal): {e}")
+
+
 def delete_document(source: str, doc_type: str | None = None) -> dict:
     """
     Delete a document and its chunks from the vector store.
-    Also removes the .md file from DATA_DIR if found.
+    Also removes the .md file from DATA_DIR and the row from Supabase.
     source: filename (e.g. "UOB-Software-Engineer.md")
     doc_type: optional folder name to locate the file (e.g. "career")
     Returns: {deleted_chunks: int, deleted_file: str | None, error: str | None}
     """
     result = {"deleted_chunks": 0, "deleted_file": None, "error": None}
     try:
-        # Delete from Chroma by metadata filter
-        collection = vectorstore._collection
-        before = collection.count()
-        # Chroma accepts where as dict for metadata filter
-        vectorstore.delete(where={"source": source})
-        after = collection.count()
-        result["deleted_chunks"] = before - after
+        # Find chunk IDs by source metadata filter, then delete from Supabase vector store
+        chunk_query = supabase_client.table("document_chunks") \
+            .select("id") \
+            .filter("metadata->>source", "eq", source) \
+            .execute()
+        chunk_ids = [str(row["id"]) for row in (chunk_query.data or [])]
+        if chunk_ids:
+            vectorstore.delete(chunk_ids)
+        result["deleted_chunks"] = len(chunk_ids)
 
         # Find and delete the .md file
         data_path = Path(DATA_DIR)
@@ -71,6 +106,9 @@ def delete_document(source: str, doc_type: str | None = None) -> dict:
                     f.unlink()
                     result["deleted_file"] = str(f)
                     break
+
+        # Sync deletion to Supabase
+        _sync_delete_supabase(source, doc_type)
     except Exception as e:
         result["error"] = str(e)
     return result
@@ -124,6 +162,9 @@ def add_document(content: str, filename: str, doc_type: str) -> dict:
         vectorstore.add_documents(chunks)
         result["chunks_added"] = len(chunks)
         print(f"[document_ops] Added {len(chunks)} chunks for {filename} to vector store")
+
+        # Sync to Supabase
+        _sync_upsert_supabase(filename, doc_type, content)
     except Exception as e:
         result["error"] = str(e)
         print(f"[document_ops] add_document error: {e}")

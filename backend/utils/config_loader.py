@@ -1,58 +1,153 @@
 import yaml
 from pathlib import Path
+
+
 class ConfigLoader:
     def __init__(self, config_path: Path = None):
         if config_path is None:
             project_root = Path(__file__).parent.parent
             config_path = project_root / 'config.yaml'
         self.config_path = Path(config_path)
-        self._load()
+        # Load YAML as baseline defaults, then overlay with Supabase.
+        # If no Supabase rows exist yet, seed them from the YAML values.
+        self._load_yaml()
+        self._init_from_supabase()
 
-    def _load(self):
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _load_yaml(self) -> None:
         with open(self.config_path, 'r') as f:
             self.config = yaml.safe_load(f)
 
-    def reload(self):
-        """Reload config from disk."""
-        self._load()
+    def _config_to_rows(self) -> list[dict]:
+        """
+        Flatten self.config into individual {key, value} rows for Supabase.
+        Frontend subkeys are stored as 'frontend.<key>' (e.g. 'frontend.app_name').
+        Each value is stored as-is (Supabase jsonb preserves types).
+        """
+        rows = []
+        for k, v in self.config.items():
+            if k == "frontend" and isinstance(v, dict):
+                for fk, fv in v.items():
+                    rows.append({"key": f"frontend.{fk}", "value": fv})
+            else:
+                rows.append({"key": k, "value": v})
+        return rows
 
-    def get_config(self):
-        """Get the full config dictionary."""
+    def _rows_to_config(self, rows: list[dict]) -> dict:
+        """
+        Reconstruct a config dict from a list of {key, value} Supabase rows.
+        'frontend.*' keys are nested back under config['frontend'].
+        """
+        config: dict = {}
+        frontend: dict = {}
+        for row in rows:
+            k = row["key"]
+            v = row["value"]
+            if k.startswith("frontend."):
+                frontend[k[len("frontend."):]] = v
+            else:
+                config[k] = v
+        if frontend:
+            config["frontend"] = frontend
+        return config
+
+    def _apply_remote(self, remote: dict) -> None:
+        """Merge a remote config dict over self.config in-place."""
+        for k, v in remote.items():
+            if k == "frontend" and isinstance(v, dict):
+                local_fe = self.config.get("frontend") or {}
+                local_fe.update(v)
+                self.config["frontend"] = local_fe
+            else:
+                self.config[k] = v
+
+    # ------------------------------------------------------------------
+    # Supabase sync
+    # ------------------------------------------------------------------
+
+    def _init_from_supabase(self) -> None:
+        """
+        Pull all key-value rows from Supabase and overlay on YAML defaults.
+        If the table is empty, seed it from the current YAML values.
+        Non-fatal — falls back to YAML-only if Supabase is unreachable.
+        """
+        try:
+            from utils.supabase_client import supabase_client
+            result = supabase_client.table("app_config").select("key, value").execute()
+            rows = result.data or []
+            if rows:
+                self._apply_remote(self._rows_to_config(rows))
+            else:
+                seed_rows = self._config_to_rows()
+                supabase_client.table("app_config").upsert(
+                    seed_rows, on_conflict="key"
+                ).execute()
+                print("[config_loader] Seeded Supabase app_config from config.yaml")
+        except Exception as e:
+            print(f"[config_loader] Supabase init warning (non-fatal, using YAML): {e}")
+
+    def _push_to_supabase(self) -> None:
+        """Upsert all config key-value rows to Supabase. Non-fatal."""
+        try:
+            from utils.supabase_client import supabase_client
+            rows = self._config_to_rows()
+            supabase_client.table("app_config").upsert(
+                rows, on_conflict="key"
+            ).execute()
+        except Exception as e:
+            print(f"[config_loader] Supabase push warning (non-fatal): {e}")
+
+    def reload(self) -> None:
+        """Reload YAML baseline, then overlay latest rows from Supabase."""
+        self._load_yaml()
+        try:
+            from utils.supabase_client import supabase_client
+            result = supabase_client.table("app_config").select("key, value").execute()
+            rows = result.data or []
+            if rows:
+                self._apply_remote(self._rows_to_config(rows))
+        except Exception as e:
+            print(f"[config_loader] Supabase reload warning (non-fatal): {e}")
+
+    # ------------------------------------------------------------------
+    # Accessors
+    # ------------------------------------------------------------------
+
+    def get_config(self) -> dict:
         return self.config
-    
-    # Provide easy access to specific config values for other modules
+
     def get_chunk_size(self):
         return self.config.get('CHUNK_SIZE')
-    
+
     def get_overlap(self):
         return self.config.get('OVERLAP')
-    
+
     def get_top_k(self):
         return self.config.get('TOP_K')
-    
+
     def get_similarity_threshold(self):
         return self.config.get('SIMILARITY_THRESHOLD')
-    
+
     def get_embedding_model(self):
         return self.config.get('EMBEDDING_MODEL')
-    
+
     def get_llm_model(self):
         return self.config.get('LLM_MODEL')
-    
-    def get_vector_db(self):
-        return self.config.get('VECTOR_DB')
-    
-    def get_db_name(self):
-        return self.config.get('DB_NAME')
-    
+
     def get_data_dir(self):
         return self.config.get('DATA_DIR')
-    
+
     def get_generator_model(self):
         return self.config.get('GENERATOR_MODEL')
-        
+
     def get_evaluator_model(self):
         return self.config.get('EVALUATOR_MODEL')
+
+    def get_recipient_email(self) -> str:
+        return self.config.get('RECIPIENT_EMAIL', '')
 
     def get_frontend_config(self) -> dict:
         """Return frontend-facing config (safe to expose via API)."""
@@ -68,7 +163,6 @@ class ConfigLoader:
         return {**default, **frontend}
 
     def get_models_config(self) -> dict:
-        """Return model selection config."""
         return {
             "embedding_model": self.config.get("EMBEDDING_MODEL", "text-embedding-3-large"),
             "generator_model": self.config.get("GENERATOR_MODEL", "gpt-4o-mini"),
@@ -81,22 +175,22 @@ class ConfigLoader:
         return {
             **self.get_frontend_config(),
             **self.get_models_config(),
+            "recipient_email": self.get_recipient_email(),
         }
+
+    # ------------------------------------------------------------------
+    # Updates
+    # ------------------------------------------------------------------
 
     def update_and_save(self, updates: dict) -> None:
         """
-        Merge updates into config and persist to config.yaml.
-        Accepts frontend.* keys and EMBEDDING_MODEL, GENERATOR_MODEL, LLM_MODEL, EVALUATOR_MODEL.
+        Merge updates into the in-memory config and persist individual rows to Supabase.
+        Accepts frontend.* keys, model keys, and recipient_email.
+        config.yaml is NOT modified — Supabase is the source of truth at runtime.
         """
-        frontend_updates = {}
-        model_keys = {"EMBEDDING_MODEL", "GENERATOR_MODEL", "LLM_MODEL", "EVALUATOR_MODEL"}
-        frontend_key_map = {
-            "app_name": "app_name",
-            "chat_title": "chat_title",
-            "chat_subtitle": "chat_subtitle",
-            "input_placeholder": "input_placeholder",
-            "empty_state_hint": "empty_state_hint",
-            "empty_state_examples": "empty_state_examples",
+        frontend_keys = {
+            "app_name", "chat_title", "chat_subtitle",
+            "input_placeholder", "empty_state_hint", "empty_state_examples",
         }
         model_key_map = {
             "embedding_model": "EMBEDDING_MODEL",
@@ -105,22 +199,20 @@ class ConfigLoader:
             "evaluator_model": "EVALUATOR_MODEL",
         }
 
+        frontend_updates: dict = {}
         for k, v in updates.items():
             if v is None or v == "":
                 continue
-            if k in frontend_key_map:
+            if k in frontend_keys:
                 frontend_updates[k] = v
             elif k in model_key_map:
                 self.config[model_key_map[k]] = v
-            elif k in model_keys:
-                self.config[k] = v
+            elif k == "recipient_email":
+                self.config["RECIPIENT_EMAIL"] = v
 
         if frontend_updates:
             frontend = self.config.get("frontend") or {}
             frontend.update(frontend_updates)
             self.config["frontend"] = frontend
 
-        with open(self.config_path, "w") as f:
-            yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-
-        self._load()
+        self._push_to_supabase()

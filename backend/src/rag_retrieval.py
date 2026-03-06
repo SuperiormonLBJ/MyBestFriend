@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import SupabaseVectorStore
 
 import sys
 from pathlib import Path
@@ -12,18 +12,23 @@ if str(project_root) not in sys.path:
 from utils.base_models import RerankOrder
 from utils.config_loader import ConfigLoader
 from utils.prompts import REWRITE_PROMPT, SYSTEM_PROMPT_GENERATOR, SYSTEM_PROMPT_RERANKER
+from utils.supabase_client import supabase_client
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
 config = ConfigLoader()
-DB_NAME = str((project_root / config.get_db_name()).resolve())
 embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
-llm=ChatOpenAI(model=config.get_generator_model())
+llm = ChatOpenAI(model=config.get_generator_model())
 TOP_K = config.get_top_k()
 
-vectorstore = Chroma(persist_directory=DB_NAME, embedding_function=embeddings, collection_name="my_collection")
+vectorstore = SupabaseVectorStore(
+    client=supabase_client,
+    embedding=embeddings,
+    table_name="document_chunks",
+    query_name="match_documents",
+)
 retriever_similarity = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
 retriever_mmr = vectorstore.as_retriever(
     search_type="mmr",
@@ -160,14 +165,13 @@ def get_knowledge_tree():
     Return tree structure of ingested documents for admin UI.
     Tree: doc_type (folder) -> source (document) -> chunks with previews.
     """
-    collection = vectorstore._collection
-    result = collection.get(include=["documents", "metadatas"])
-    docs = result["documents"]
-    metadatas = result["metadatas"]
+    result = supabase_client.table("document_chunks").select("content, metadata").execute()
+    rows = result.data or []
 
-    # Build: doc_type -> source -> list of (preview, section)
     structure = {}
-    for i, (content, meta) in enumerate(zip(docs, metadatas)):
+    for row in rows:
+        meta = row.get("metadata") or {}
+        content = row.get("content", "")
         doc_type = meta.get("doc_type") or meta.get("source", "").split("/")[0] or "unknown"
         source = meta.get("source", "unknown")
         section = meta.get("section") or meta.get("subsection") or ""
@@ -179,7 +183,6 @@ def get_knowledge_tree():
             structure[doc_type][source] = []
         structure[doc_type][source].append({"preview": preview, "section": section})
 
-    # Convert to tree format
     tree = []
     for doc_type in sorted(structure.keys()):
         sources = structure[doc_type]

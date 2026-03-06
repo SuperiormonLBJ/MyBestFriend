@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from rag_retrieval import generate_answer, get_knowledge_tree, reload_vectorstore
 from utils.config_loader import ConfigLoader
 from utils.prompts import RESTRUCTURE_TO_MD_PROMPT, get_reference_template
+from utils.supabase_client import supabase_client
 from document_ops import delete_document, add_document
 from rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -48,7 +49,8 @@ def health():
 
 @app.get("/api/config")
 def get_config():
-    """Return full editable config (frontend + models) from config.yaml."""
+    """Return full editable config (frontend + models), pulling latest from Supabase first."""
+    config.reload()
     return config.get_full_config()
 
 
@@ -63,6 +65,15 @@ class ConfigUpdateRequest(BaseModel):
     generator_model: str | None = None
     llm_model: str | None = None
     evaluator_model: str | None = None
+    recipient_email: str | None = None
+
+
+@app.post("/api/config/push")
+def push_config_to_supabase():
+    """Force-push the current in-memory config to Supabase (use once after creating the table)."""
+    config.reload()
+    config._push_to_supabase()
+    return {"status": "ok", "config": config.get_full_config()}
 
 
 @app.put("/api/config")
@@ -184,11 +195,36 @@ def api_delete_document(source: str, doc_type: str | None = None):
 def api_ingest():
     """Re-ingest all documents from the data directory and rebuild the vector store."""
     try:
+        from rag_ingestion import DATA_DIR
+        from pathlib import Path
+
         documents = load_document()
         chunks = create_chunks_markdown(documents)
         vector_store = embed_chunks(chunks)
         reload_vectorstore(vector_store)
-        count = vector_store._collection.count()
-        return {"chunks_count": count, "status": "ok"}
+
+        # Sync every document to the Supabase `documents` table.
+        # load_document() returns one Document per .md file; read the original
+        # file from disk so we capture the frontmatter as well.
+        synced = 0
+        for doc in documents:
+            filename = doc.metadata.get("source", "")
+            doc_type = doc.metadata.get("doc_type", "misc")
+            if not filename:
+                continue
+            file_path = next(Path(DATA_DIR).rglob(filename), None)
+            content = file_path.read_text(encoding="utf-8") if file_path else doc.page_content
+            try:
+                supabase_client.table("documents").upsert(
+                    {"filename": filename, "doc_type": doc_type, "content": content},
+                    on_conflict="filename,doc_type",
+                ).execute()
+                synced += 1
+            except Exception as sync_err:
+                print(f"[api_ingest] documents sync warning for {filename}: {sync_err}")
+
+        count_result = supabase_client.table("document_chunks").select("id", count="exact").execute()
+        count = count_result.count or 0
+        return {"chunks_count": count, "documents_synced": synced, "status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

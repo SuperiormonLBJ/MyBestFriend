@@ -3,10 +3,9 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_chroma import Chroma
-from collections import Counter
 import sys
 
 # Add project root to path so we can import from utils
@@ -47,9 +46,10 @@ RAG Ingestion Module
 
 #/Users/beijim4/Desktop/Projects-AI/MyBestFriend/data
 project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 config = ConfigLoader()
-# Resolve DB_NAME to absolute path so ingestion and retrieval use the same DB regardless of cwd
-DB_NAME = str((project_root / config.get_db_name()).resolve())
 # Resolve DATA_DIR to absolute path relative to project root
 data_dir_from_config = config.get_data_dir()
 # Resolve relative path from project root
@@ -233,36 +233,23 @@ def create_chunks_markdown(documents):
     return chunked_docs
 
 def embed_chunks(chunks):
-    if os.path.exists(DB_NAME):
-        print(f"Deleting existing vectorstore at {DB_NAME}")
-        Chroma(persist_directory=DB_NAME, embedding_function=embeddings, collection_name="my_collection").delete_collection()
+    from utils.supabase_client import supabase_client
 
-    vector_store = Chroma.from_documents(
+    # Clear all existing chunks before re-ingestion (neq null-uuid matches all rows)
+    supabase_client.table("document_chunks").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+    print("Cleared existing document_chunks from Supabase")
+
+    vector_store = SupabaseVectorStore.from_documents(
         documents=chunks,
         embedding=embeddings,
-        persist_directory=DB_NAME,
-        collection_name="my_collection"
+        client=supabase_client,
+        table_name="document_chunks",
+        query_name="match_documents",
     )
 
-    print(f"Vectorstore created with {vector_store._collection.count()} documents")
-
-    collection = vector_store._collection
-    count = collection.count()
-
-    sample_embedding = collection.get(limit=1, include=["embeddings"])["embeddings"][0]
-    dimensions = len(sample_embedding)
-    print(f"There are {count:,} vectors with {dimensions:,} dimensions in the vector store")
-
-    all_docs = collection.get(include=["documents", "metadatas"])
-
-    # Count by source
-    sources = [meta.get("source", "unknown") for meta in all_docs["metadatas"]]
-    print("Documents by source:", Counter(sources))
-
-    # Check for duplicates
-    doc_contents = all_docs["documents"]
-    print(f"Total documents: {len(doc_contents)}")
-    print(f"Unique documents: {len(set(doc_contents))}")
+    count_result = supabase_client.table("document_chunks").select("id", count="exact").execute()
+    count = count_result.count or 0
+    print(f"Vectorstore created with {count:,} chunks in Supabase")
 
     return vector_store
 

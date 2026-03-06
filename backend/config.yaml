@@ -2,9 +2,8 @@ CHUNK_SIZE: 1000
 OVERLAP: 200
 TOP_K: 5
 SIMILARITY_THRESHOLD: 0.7
-DB_NAME: src/chroma_db
 DATA_DIR: data
-VECTOR_DB: chroma
+RECIPIENT_EMAIL: superiormon187@gmail.com
 EMBEDDING_MODEL: text-embedding-3-large
 GENERATOR_MODEL: gpt-4o
 LLM_MODEL: gpt-4o
