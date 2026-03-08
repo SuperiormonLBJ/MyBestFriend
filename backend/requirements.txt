@@ -95,8 +95,6 @@ bs4==0.0.2
     # via mybestfriend-backend (pyproject.toml)
 build==1.4.0
     # via chromadb
-cachetools==6.2.6
-    # via pyiceberg
 certifi==2025.11.12
     # via
     #   httpcore
@@ -118,7 +116,6 @@ chromadb==1.5.2
     #   langchain-chroma
 click==8.3.1
     # via
-    #   pyiceberg
     #   typer
     #   uvicorn
 cloudevents==1.12.0
@@ -195,7 +192,6 @@ fsspec==2026.2.0
     #   datasets
     #   gradio-client
     #   huggingface-hub
-    #   pyiceberg
 google-crc32c==1.8.0
     # via aiortc
 googleapis-common-protos==1.73.0
@@ -418,9 +414,7 @@ mcp-server-fetch==2025.1.17
 mdurl==0.1.2
     # via markdown-it-py
 mmh3==5.2.1
-    # via
-    #   chromadb
-    #   pyiceberg
+    # via chromadb
 more-itertools==10.8.0
     # via openapi-core
 mpmath==1.3.0
@@ -558,7 +552,7 @@ plotly==6.6.0
     # via mybestfriend-backend (pyproject.toml)
 polygon-api-client==1.16.3
     # via mybestfriend-backend (pyproject.toml)
-postgrest==2.28.0
+postgrest==1.1.1
     # via supabase
 posthog==5.4.0
     # via chromadb
@@ -616,12 +610,10 @@ pydantic==2.11.10
     #   openai-agents
     #   postgrest
     #   pydantic-settings
-    #   pyiceberg
     #   ragas
     #   realtime
     #   semantic-kernel
     #   smithery
-    #   storage3
     #   supabase-auth
     #   weaviate-client
 pydantic-core==2.33.2
@@ -644,8 +636,6 @@ pygments==2.19.2
     #   ipython
     #   ipython-pygments-lexers
     #   rich
-pyiceberg==0.11.1
-    # via storage3
 pyjwt==2.11.0
     # via
     #   mcp
@@ -657,8 +647,6 @@ pymeta3==0.5.1
     # via pybars4
 pyopenssl==25.3.0
     # via aiortc
-pyparsing==3.3.2
-    # via pyiceberg
 pypdf==6.7.5
     # via mybestfriend-backend (pyproject.toml)
 pypdf2==3.0.1
@@ -667,14 +655,12 @@ pypika==0.51.1
     # via chromadb
 pyproject-hooks==1.2.0
     # via build
-pyroaring==1.0.3
-    # via pyiceberg
 python-dateutil==2.9.0.post0
     # via
     #   kubernetes
     #   pandas
     #   posthog
-    #   strictyaml
+    #   storage3
 python-dotenv==1.2.2
     # via
     #   mybestfriend-backend (pyproject.toml)
@@ -705,7 +691,7 @@ ragas==0.4.3
     # via mybestfriend-backend (pyproject.toml)
 readabilipy==0.3.0
     # via mcp-server-fetch
-realtime==2.28.0
+realtime==2.7.0
     # via supabase
 referencing==0.36.2
     # via
@@ -732,7 +718,6 @@ requests==2.32.5
     #   openai-agents
     #   posthog
     #   prance
-    #   pyiceberg
     #   requests-oauthlib
     #   requests-toolbelt
     #   tiktoken
@@ -747,7 +732,6 @@ rich==14.3.3
     # via
     #   chromadb
     #   instructor
-    #   pyiceberg
     #   ragas
     #   typer
 rpds-py==0.30.0
@@ -814,17 +798,15 @@ starlette==0.52.1
     #   mcp
     #   smithery
     #   sse-starlette
-storage3==2.28.0
+storage3==0.12.1
     # via supabase
 strenum==0.4.15
     # via supabase-functions
-strictyaml==1.7.3
-    # via pyiceberg
-supabase==2.28.0
+supabase==2.18.1
     # via mybestfriend-backend (pyproject.toml)
-supabase-auth==2.28.0
+supabase-auth==2.12.3
     # via supabase
-supabase-functions==2.28.0
+supabase-functions==0.10.1
     # via supabase
 sympy==1.14.0
     # via onnxruntime
@@ -834,7 +816,6 @@ tenacity==9.1.4
     #   instructor
     #   langchain-community
     #   langchain-core
-    #   pyiceberg
 threadpoolctl==3.6.0
     # via scikit-learn
 tiktoken==0.12.0
@@ -971,15 +952,8 @@ xxhash==3.6.0
     #   langgraph
     #   langsmith
 yarl==1.23.0
-    # via
-    #   aiohttp
-    #   postgrest
-    #   storage3
-    #   supabase
-    #   supabase-functions
+    # via aiohttp
 zipp==3.23.0
     # via importlib-metadata
 zstandard==0.25.0
-    # via
-    #   langsmith
-    #   pyiceberg
+    # via langsmith
