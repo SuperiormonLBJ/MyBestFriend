@@ -1,7 +1,9 @@
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
 
+import os
 import sys
+import threading
 from pathlib import Path
 
 # Add project root to path so we can import from utils
@@ -23,6 +25,7 @@ embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
 llm = ChatOpenAI(model=config.get_generator_model())
 TOP_K = config.get_top_k()
 
+# Module-level vectorstore (used by the main thread and reload_vectorstore).
 vectorstore = SupabaseVectorStore(
     client=supabase_client,
     embedding=embeddings,
@@ -34,32 +37,52 @@ retriever_mmr = vectorstore.as_retriever(
     search_type="mmr",
     search_kwargs={
         "k": TOP_K,
-        "lambda_mult": 0.6  # tweak for diversity
+        "lambda_mult": 0.6
     }
 )
+
+# Thread-local vectorstore so background threads (e.g. eval) get their own
+# httpx connection and don't corrupt the main thread's Supabase client.
+_tl = threading.local()
+_vs_version = 0  # incremented on reload so threads rebuild their local copy
+
+
+def _get_tl_vectorstore() -> SupabaseVectorStore:
+    """Return a per-thread SupabaseVectorStore, rebuilding it when the main vectorstore has been reloaded."""
+    if getattr(_tl, "vs_version", -1) != _vs_version:
+        from supabase import create_client
+        _c = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SECRET_KEY"])
+        _tl.vectorstore = SupabaseVectorStore(
+            client=_c,
+            embedding=embeddings,
+            table_name="document_chunks",
+            query_name="match_documents",
+        )
+        _tl.vs_version = _vs_version
+    return _tl.vectorstore
 
 
 def reload_vectorstore(new_vectorstore):
     """Replace the global vectorstore and retrievers after re-ingestion."""
-    global vectorstore, retriever_similarity, retriever_mmr
+    global vectorstore, retriever_similarity, retriever_mmr, _vs_version
     vectorstore = new_vectorstore
     retriever_similarity = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
     retriever_mmr = vectorstore.as_retriever(
         search_type="mmr",
         search_kwargs={"k": TOP_K, "lambda_mult": 0.6},
     )
+    _vs_version += 1  # signal all threads to rebuild their local copy
 
 
 def fetch_context(query: str) -> list:
     """
-    Fetch the context for the query from the vector store with Top K results
+    Fetch the context for the query from the vector store with Top K results.
+    Uses a thread-local vectorstore to avoid httpx thread-safety issues.
+    generate_answer calls this twice (rewritten + original query) for diversity,
+    so a single similarity search per call is sufficient.
     """
-    context_similarity = retriever_similarity.invoke(query)
-    context_mmr = retriever_mmr.invoke(query)
-    context = context_similarity + context_mmr
-    # remove duplicates from similarity and mmr by creating a unique key from page_content and source metadata
-
-    return context
+    vs = _get_tl_vectorstore()
+    return vs.as_retriever(search_kwargs={"k": TOP_K}).invoke(query)
 
 def deduplicate_context(context: list) -> list:
     """

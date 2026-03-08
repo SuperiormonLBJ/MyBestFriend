@@ -2,6 +2,9 @@
 FastAPI server for the MyBestFriend chatbot.
 Run with: uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
 """
+import threading
+import time
+import uuid
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -15,6 +18,10 @@ from document_ops import delete_document, add_document
 from rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+import traceback as _traceback
+# Pre-import eval in the main thread so its module-level code (ConfigLoader, ChatOpenAI init)
+# runs here, never inside a background thread where the shared Supabase client is not safe.
+from eval import load_test_questions, evaluate_LLM, evaluate_all
 
 config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
@@ -262,3 +269,47 @@ def api_reset_prompt(key: str):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to reset prompt")
     return {"key": key, "status": "reset", "content": default}
+
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+_eval_jobs: dict[str, dict] = {}
+
+
+@app.post("/api/evaluate")
+def api_start_evaluation():
+    """Start a background evaluation run. Returns a job_id to poll for results."""
+    job_id = str(uuid.uuid4())[:8]
+    _eval_jobs[job_id] = {"status": "running", "started_at": time.time(), "result": None, "error": None}
+
+    def run():
+        try:
+            tests = load_test_questions()
+            llm_result = evaluate_LLM(tests)
+            retrieval_result = evaluate_all(tests)
+            _eval_jobs[job_id].update({
+                "status": "done",
+                "finished_at": time.time(),
+                "result": {
+                    "llm": llm_result.model_dump(),
+                    "retrieval": retrieval_result.model_dump(),
+                    "test_count": len(tests),
+                },
+            })
+        except Exception as exc:
+            _traceback.print_exc()
+            _eval_jobs[job_id].update({"status": "error", "error": str(exc)})
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/api/evaluate/{job_id}")
+def api_get_evaluation(job_id: str):
+    """Poll the status/result of an evaluation job."""
+    job = _eval_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job

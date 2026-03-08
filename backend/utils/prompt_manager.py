@@ -7,7 +7,9 @@ Usage:
     system_msg = get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=ctx)
 """
 
+import os
 import sys
+import threading
 from pathlib import Path
 
 _project_root = Path(__file__).parent.parent
@@ -52,9 +54,18 @@ _DEFAULTS: dict[str, dict] = {
 }
 
 
+# Thread-local storage so each thread gets its own Supabase client (httpx is not thread-safe to share).
+_tl = threading.local()
+
+
 def _client():
-    from utils.supabase_client import supabase_client
-    return supabase_client
+    if not hasattr(_tl, "client"):
+        from supabase import create_client
+        _tl.client = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_SECRET_KEY"],
+        )
+    return _tl.client
 
 
 def seed_if_empty() -> None:

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Database, Settings, ScrollText } from "lucide-react";
+import { Database, Settings, ScrollText, FlaskConical } from "lucide-react";
 
 export default function AdminPage() {
   return (
@@ -16,7 +16,7 @@ export default function AdminPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-8">
-        <div className="mx-auto grid max-w-4xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto grid max-w-4xl gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href="/admin/knowledge"
             className="group block rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer"
@@ -63,6 +63,23 @@ export default function AdminPage() {
                 <h3 className="font-semibold text-[var(--foreground)]">Prompts</h3>
                 <p className="text-sm text-[var(--foreground-muted)]">
                   Edit LLM system prompts stored in Supabase
+                </p>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            href="/admin/eval"
+            className="group block rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-6 transition-all duration-200 hover:border-[var(--primary)] hover:shadow-[0_0_16px_var(--primary-glow)] cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">
+                <FlaskConical className="h-6 w-6" strokeWidth={2} />
+              </div>
+              <div>
+                <h3 className="font-semibold text-[var(--foreground)]">Evaluation</h3>
+                <p className="text-sm text-[var(--foreground-muted)]">
+                  Run RAG evaluation and visualize results
                 </p>
               </div>
             </div>
