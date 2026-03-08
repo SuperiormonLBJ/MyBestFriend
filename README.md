@@ -26,13 +26,15 @@ Build a production-grade RAG system that:
 5. **Validation**: Verify answer is grounded in retrieved context
 6. **Formatting**: Format response with citations
 
+**Repo layout**: Frontend (Next.js) lives in `frontend/`; backend (FastAPI + RAG) lives in `backend/` with its own `pyproject.toml` and `uv.lock` so the two halves are independent.
+
 ## Setup
 
-1. Install dependencies: `uv sync`
-2. Configure `.env` with `OPENAI_API_KEY`
-3. Configure `config.yaml` for models and parameters
-4. Run ingestion to populate vector database
-5. Launch application
+1. **Backend**: `cd backend && uv sync`. Configure `backend/src/.env` and `backend/config.yaml`.
+2. **Frontend**: `cd frontend && npm install`.
+3. Run backend: `cd backend && uv run uvicorn src.api_server:app --reload --host 0.0.0.0 --port 8000`.
+4. Run frontend: `cd frontend && npm run dev`.
+5. Configure ingestion and launch as needed.
 
 ## Configuration
 

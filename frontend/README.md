@@ -30,9 +30,8 @@ Open [http://localhost:3000](http://localhost:3000).
 The chatbot calls the backend API at `http://127.0.0.1:8000` by default. To run the backend:
 
 ```bash
-cd ../backend/src
-pip install fastapi uvicorn
-uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
+cd ../backend
+uv run uvicorn src.api_server:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Set `BACKEND_URL` (or `NEXT_PUBLIC_BACKEND_URL`) in `.env.local` to override the backend URL.
