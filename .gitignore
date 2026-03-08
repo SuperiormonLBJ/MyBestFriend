@@ -51,6 +51,9 @@ env/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+# Frontend src/lib is not Python; allow it (root lib/ ignores all lib dirs)
+!frontend/src/lib/
+!frontend/src/lib/**
 
 # Generated design system (ui-ux-pro-max)
 design-system/

@@ -78,6 +78,11 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/")
+def root():
+    return {"service": "MyBestFriend API", "health": "/health"}
+
+
 # ---------------------------------------------------------------------------
 # Contact / inquiry email
 # ---------------------------------------------------------------------------

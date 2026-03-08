@@ -24,13 +24,20 @@ Your backend is a long-running FastAPI app with RAG and streaming. Python deps l
 
 ### Option A: Railway
 
+Railway’s default image does not include `uv`. Use **Root Directory** `backend` and **pip** with the checked-in `backend/requirements.txt`.
+
 1. Go to [railway.app](https://railway.app), sign in with GitHub.
 2. **New Project** → **Deploy from GitHub repo** → select `MyBestFriend`.
-3. Set **Root Directory** to **`backend`**.
-4. **Build Command**: `uv sync` (or `pip install -r requirements.txt` if you add one under `backend/`).
-5. **Start Command**: `uv run uvicorn src.api_server:app --host 0.0.0.0 --port $PORT` (Railway sets `PORT`).
+3. **Root Directory**: **`backend`** (so the run directory has `src/` and `requirements.txt`).
+4. **Build Command**: `pip install -r requirements.txt`
+5. **Start Command**: `PYTHONPATH=.:src uvicorn src.api_server:app --host 0.0.0.0 --port ${PORT:-8080}` (Railway sets `PORT`; `${PORT:-8080}` falls back to 8080 if unset). `.:src` makes both `backend` and `backend/src` importable so `rag_retrieval` and `utils` resolve.
 6. **Variables**: add env vars (e.g. `OPENAI_API_KEY`, Supabase keys). Use `backend/src/.env` as reference; do not commit secrets.
-7. Deploy; note the public URL (e.g. `https://your-app.up.railway.app`).
+7. **Fix 502: set target port.** In Railway → your service → **Settings** → **Networking** (or **Public Networking**) → under your public domain, set **Target Port** to **8080** (or the port your logs show, e.g. "Uvicorn running on http://0.0.0.0:8080"). The proxy must forward to the same port the app listens on.
+8. Deploy; note the public URL (e.g. `https://your-app.up.railway.app`).
+
+Regenerate `backend/requirements.txt` after changing deps: `cd backend && uv pip compile pyproject.toml -o requirements.txt`.
+
+**If you get 502 Bad Gateway:** (1) **Target port** (most common): Railway → service → **Settings** → **Networking** → set **Target Port** to **8080** so it matches the port in your logs ("Uvicorn running on http://0.0.0.0:8080"). (2) Ensure the app uses `$PORT` (start command uses `${PORT:-8080}`). (3) Open `https://your-app.up.railway.app/health`; if that works, the app is up. (4) Ensure **Generate Domain** was used for the service.
 
 ### Option B: Render
 
