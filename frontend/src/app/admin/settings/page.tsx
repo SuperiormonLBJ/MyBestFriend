@@ -22,6 +22,8 @@ const EMBEDDING_MODELS = [
 ];
 
 const CHAT_MODELS = [
+  "gpt-4.1",
+  "gpt-4.1-mini",
   "gpt-4o",
   "gpt-4o-mini",
   "gpt-4-turbo",
@@ -39,6 +41,8 @@ const EMPTY_FORM: FullConfig = {
   embedding_model: "",
   generator_model: "",
   llm_model: "",
+  rewrite_model: "",
+  reranker_model: "",
   evaluator_model: "",
   recipient_email: "",
 };
@@ -343,6 +347,76 @@ export default function SettingsPage() {
                     ))}
                   </select>
                 </Field>
+                <Field
+                  label="Evaluator model"
+                  hint="Used for answer quality scoring."
+                >
+                  <select
+                    value={form.evaluator_model ?? ""}
+                    onChange={(e) => set("evaluator_model", e.target.value)}
+                    className={selectCls}
+                  >
+                    {form.evaluator_model &&
+                      !CHAT_MODELS.includes(form.evaluator_model) && (
+                        <option value={form.evaluator_model}>
+                          {form.evaluator_model}
+                        </option>
+                      )}
+                    {CHAT_MODELS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field
+                  label="Query rewrite model"
+                  hint="Used to rephrase user questions for better retrieval."
+                >
+                  <select
+                    value={form.rewrite_model ?? ""}
+                    onChange={(e) => set("rewrite_model", e.target.value)}
+                    className={selectCls}
+                  >
+                    {form.rewrite_model &&
+                      !CHAT_MODELS.includes(form.rewrite_model) && (
+                        <option value={form.rewrite_model}>
+                          {form.rewrite_model}
+                        </option>
+                      )}
+                    {CHAT_MODELS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field
+                  label="Reranker model"
+                  hint="Used to reorder retrieved chunks by relevance."
+                >
+                  <select
+                    value={form.reranker_model ?? ""}
+                    onChange={(e) => set("reranker_model", e.target.value)}
+                    className={selectCls}
+                  >
+                    {form.reranker_model &&
+                      !CHAT_MODELS.includes(form.reranker_model) && (
+                        <option value={form.reranker_model}>
+                          {form.reranker_model}
+                        </option>
+                      )}
+                    {CHAT_MODELS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <Field
                   label="Evaluator model"
                   hint="Used for answer quality scoring."

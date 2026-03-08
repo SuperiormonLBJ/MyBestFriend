@@ -72,6 +72,8 @@ class ConfigUpdateRequest(BaseModel):
     embedding_model: str | None = None
     generator_model: str | None = None
     llm_model: str | None = None
+    rewrite_model: str | None = None
+    reranker_model: str | None = None
     evaluator_model: str | None = None
     recipient_email: str | None = None
 
@@ -278,6 +280,39 @@ def api_reset_prompt(key: str):
 _eval_jobs: dict[str, dict] = {}
 
 
+def _save_eval_result(result: dict) -> None:
+    """Persist the latest eval result to the eval_results table."""
+    try:
+        supabase_client.table("eval_results").upsert(
+            {
+                "id": 1,  # single-row table — always overwrite the same row
+                "status": result.get("status"),
+                "finished_at": result.get("finished_at"),
+                "result": result.get("result"),
+            },
+            on_conflict="id",
+        ).execute()
+    except Exception as e:
+        print(f"[eval] Warning: could not persist result to Supabase: {e}")
+
+
+def _load_eval_result() -> dict | None:
+    """Load the last persisted eval result from the eval_results table."""
+    try:
+        row = (
+            supabase_client.table("eval_results")
+            .select("status, finished_at, result")
+            .eq("id", 1)
+            .execute()
+        )
+        rows = row.data or []
+        if rows:
+            return rows[0]
+    except Exception as e:
+        print(f"[eval] Warning: could not load result from Supabase: {e}")
+    return None
+
+
 @app.post("/api/evaluate")
 def api_start_evaluation():
     """Start a background evaluation run. Returns a job_id to poll for results."""
@@ -289,14 +324,20 @@ def api_start_evaluation():
             tests = load_test_questions()
             llm_result = evaluate_LLM(tests)
             retrieval_result = evaluate_all(tests)
+            result_payload = {
+                "llm": llm_result.model_dump(),
+                "retrieval": retrieval_result.model_dump(),
+                "test_count": len(tests),
+            }
             _eval_jobs[job_id].update({
                 "status": "done",
                 "finished_at": time.time(),
-                "result": {
-                    "llm": llm_result.model_dump(),
-                    "retrieval": retrieval_result.model_dump(),
-                    "test_count": len(tests),
-                },
+                "result": result_payload,
+            })
+            _save_eval_result({
+                "status": "done",
+                "finished_at": time.time(),
+                "result": result_payload,
             })
         except Exception as exc:
             _traceback.print_exc()
@@ -304,6 +345,15 @@ def api_start_evaluation():
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/api/evaluate/latest")
+def api_get_latest_evaluation():
+    """Return the last completed evaluation result (survives server restarts)."""
+    data = _load_eval_result()
+    if not data:
+        return {"status": "none"}
+    return data
 
 
 @app.get("/api/evaluate/{job_id}")

@@ -165,6 +165,18 @@ export default function EvalPage() {
   const [ticker, setTicker] = useState(0); // used for elapsed-time re-render
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Load last persisted result from Supabase on mount
+  useEffect(() => {
+    fetch("/api/evaluate/latest", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.status === "done" && data?.result) {
+          setJob(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Tick every second while running so elapsed time updates live
   useEffect(() => {
     if (job.status !== "running") return;
@@ -290,6 +302,11 @@ export default function EvalPage() {
                 {job.started_at && job.finished_at && (
                   <span className="opacity-70">
                     {" "}in {elapsed(job.started_at, job.finished_at)}
+                  </span>
+                )}
+                {!job.started_at && job.finished_at && (
+                  <span className="opacity-70">
+                    {" "}· last run {new Date(job.finished_at * 1000).toLocaleString()}
                   </span>
                 )}
               </span>

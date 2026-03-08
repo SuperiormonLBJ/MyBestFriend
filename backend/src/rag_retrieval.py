@@ -15,6 +15,8 @@ from utils.base_models import RerankOrder
 from utils.config_loader import ConfigLoader
 from utils.prompt_manager import get_prompt
 from utils.supabase_client import supabase_client
+import numpy as np
+from langchain_community.vectorstores.utils import maximal_marginal_relevance
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
 from dotenv import load_dotenv
 
@@ -23,6 +25,8 @@ load_dotenv(override=True)
 config = ConfigLoader()
 embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
 llm = ChatOpenAI(model=config.get_generator_model())
+llm_rewrite = ChatOpenAI(model=config.get_rewrite_model())
+llm_reranker = ChatOpenAI(model=config.get_reranker_model())
 TOP_K = config.get_top_k()
 
 # Module-level vectorstore (used by the main thread and reload_vectorstore).
@@ -76,13 +80,33 @@ def reload_vectorstore(new_vectorstore):
 
 def fetch_context(query: str) -> list:
     """
-    Fetch the context for the query from the vector store with Top K results.
+    Fetch context via two paths and combine:
+    - Similarity search: top-K most similar chunks
+    - MMR (Maximal Marginal Relevance): top-K diverse chunks from a larger candidate pool
     Uses a thread-local vectorstore to avoid httpx thread-safety issues.
-    generate_answer calls this twice (rewritten + original query) for diversity,
-    so a single similarity search per call is sufficient.
     """
     vs = _get_tl_vectorstore()
-    return vs.as_retriever(search_kwargs={"k": TOP_K}).invoke(query)
+    query_embedding = embeddings.embed_query(query)
+
+    # Path 1: standard similarity
+    context_similarity = vs.similarity_search_by_vector(query_embedding, k=TOP_K)
+
+    # Path 2: MMR — fetch a larger candidate pool, then re-rank client-side for diversity
+    fetch_k = TOP_K * 3
+    candidates = vs.similarity_search_by_vector(query_embedding, k=fetch_k)
+    if candidates:
+        candidate_embeddings = embeddings.embed_documents([d.page_content for d in candidates])
+        mmr_indices = maximal_marginal_relevance(
+            np.array(query_embedding, dtype=np.float32),
+            candidate_embeddings,
+            lambda_mult=0.6,
+            k=TOP_K,
+        )
+        context_mmr = [candidates[i] for i in mmr_indices]
+    else:
+        context_mmr = []
+
+    return context_similarity + context_mmr
 
 def deduplicate_context(context: list) -> list:
     """
@@ -110,7 +134,7 @@ def rewrite_query(query: str, history: list = []) -> str:
         {"role": "user", "content": user_prompt},
     ]
 
-    rewritten_query = llm.invoke(messages)
+    rewritten_query = llm_rewrite.invoke(messages)
     print(f"Rewritten query: {rewritten_query.content}")
     return rewritten_query.content
 
@@ -128,7 +152,7 @@ def rerank_documents(query: str, docs: list, top_k: int = TOP_K):
         {"role": "system", "content": get_prompt("SYSTEM_PROMPT_RERANKER")},
         {"role": "user", "content": user_prompt},
     ]
-    llm_with_structured_output = llm.with_structured_output(RerankOrder)
+    llm_with_structured_output = llm_reranker.with_structured_output(RerankOrder)
     rerank_order = llm_with_structured_output.invoke(messages)
     reranked_docs = [docs[i-1] for i in rerank_order.order]
 

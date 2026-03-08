@@ -137,6 +137,12 @@ class ConfigLoader:
     def get_llm_model(self):
         return self.config.get('LLM_MODEL')
 
+    def get_rewrite_model(self):
+        return self.config.get('REWRITE_MODEL', 'gpt-4o-mini')
+
+    def get_reranker_model(self):
+        return self.config.get('RERANKER_MODEL', 'gpt-4o-mini')
+
     def get_data_dir(self):
         return self.config.get('DATA_DIR')
 
@@ -167,6 +173,8 @@ class ConfigLoader:
             "embedding_model": self.config.get("EMBEDDING_MODEL", "text-embedding-3-large"),
             "generator_model": self.config.get("GENERATOR_MODEL", "gpt-4o-mini"),
             "llm_model": self.config.get("LLM_MODEL", "gpt-4o-mini"),
+            "rewrite_model": self.config.get("REWRITE_MODEL", "gpt-4o-mini"),
+            "reranker_model": self.config.get("RERANKER_MODEL", "gpt-4o-mini"),
             "evaluator_model": self.config.get("EVALUATOR_MODEL", "gpt-4o-mini"),
         }
 
@@ -196,6 +204,8 @@ class ConfigLoader:
             "embedding_model": "EMBEDDING_MODEL",
             "generator_model": "GENERATOR_MODEL",
             "llm_model": "LLM_MODEL",
+            "rewrite_model": "REWRITE_MODEL",
+            "reranker_model": "RERANKER_MODEL",
             "evaluator_model": "EVALUATOR_MODEL",
         }
 

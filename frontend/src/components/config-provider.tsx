@@ -21,6 +21,8 @@ export type ModelsConfig = {
   embedding_model?: string;
   generator_model?: string;
   llm_model?: string;
+  rewrite_model?: string;
+  reranker_model?: string;
   evaluator_model?: string;
 };
 
