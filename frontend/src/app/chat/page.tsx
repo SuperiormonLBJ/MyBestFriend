@@ -85,34 +85,44 @@ export default function ChatPage() {
 
         for (const part of parts) {
           if (!part.startsWith("data: ")) continue;
-          const event = JSON.parse(part.slice(6));
-
-          if (event.done) {
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, content: event.final } : m))
-            );
-            setStreaming(false);
-            if (event.no_info) {
-              setPendingQuestion(content);
-              setContactState("open");
+          try {
+            const event = JSON.parse(part.slice(6));
+            if (event.done) {
+              const text = (event.final ?? accumulated).trim() || "No response generated.";
+              if (firstToken) {
+                setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: text }]);
+                firstToken = false;
+              } else {
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === assistantId ? { ...m, content: text } : m))
+                );
+              }
+              setStreaming(false);
+              if (event.no_info) {
+                setPendingQuestion(content);
+                setContactState("open");
+              }
+            } else if (event.token) {
+              if (firstToken) {
+                firstToken = false;
+                accumulated = event.token;
+                setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: accumulated }]);
+                setLoading(false);
+                setStreaming(true);
+              } else {
+                accumulated += event.token;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
+                );
+              }
             }
-          } else if (event.token) {
-            if (firstToken) {
-              firstToken = false;
-              accumulated = event.token;
-              setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: accumulated }]);
-              setLoading(false);
-              setStreaming(true);
-            } else {
-              accumulated += event.token;
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
-              );
-            }
+          } catch (e) {
+            console.error("[chat] SSE parse error:", part.slice(0, 80), e);
           }
         }
       }
-    } catch {
+    } catch (err) {
+      console.error("[chat] stream error:", err);
       const errorMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
