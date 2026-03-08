@@ -77,7 +77,10 @@ export default function ChatPage() {
 
       while (true) {
         const { done: readerDone, value } = await reader.read();
-        if (readerDone) break;
+        if (readerDone) {
+          if (value) buffer += decoder.decode(value, { stream: false });
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split("\n\n");
@@ -120,6 +123,48 @@ export default function ChatPage() {
             console.error("[chat] SSE parse error:", part.slice(0, 80), e);
           }
         }
+      }
+
+      const flushParts = buffer.trim() ? buffer.trim().split("\n\n") : [];
+      for (const part of flushParts) {
+        if (!part.startsWith("data: ")) continue;
+        try {
+          const event = JSON.parse(part.slice(6));
+          if (event.done) {
+            const text = (event.final ?? accumulated).trim() || "No response generated.";
+            if (firstToken) {
+              setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: text }]);
+              firstToken = false;
+            } else {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: text } : m))
+              );
+            }
+            setStreaming(false);
+            if (event.no_info) {
+              setPendingQuestion(content);
+              setContactState("open");
+            }
+          } else if (event.token) {
+            if (firstToken) {
+              firstToken = false;
+              accumulated = event.token;
+              setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: accumulated }]);
+              setStreaming(true);
+            } else {
+              accumulated += event.token;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
+              );
+            }
+          }
+        } catch (e) {
+          console.error("[chat] SSE parse error (flush):", part.slice(0, 80), e);
+        }
+      }
+      if (firstToken) {
+        setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "No response received." }]);
+        setStreaming(false);
       }
     } catch (err) {
       console.error("[chat] stream error:", err);
