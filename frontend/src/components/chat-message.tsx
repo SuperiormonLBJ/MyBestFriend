@@ -1,6 +1,8 @@
 "use client";
 
 import { User, Bot } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export type MessageRole = "user" | "assistant";
 
@@ -41,7 +43,13 @@ export function ChatMessageBubble({ message }: ChatMessageProps) {
             : "bg-[var(--chat-assistant-bg)] text-[var(--foreground)] border-[var(--border)]"
         }`}
       >
-        <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+        {isUser ? (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+        ) : (
+          <div className="prose prose-sm max-w-none text-[var(--foreground)] prose-headings:text-[var(--foreground)] prose-strong:text-[var(--foreground)] prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-p:my-1 prose-p:leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          </div>
+        )}
       </div>
     </div>
   );
