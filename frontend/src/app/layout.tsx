@@ -19,9 +19,9 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeProvider>
           <ConfigProvider>
-            <div className="flex min-h-screen w-full">
+            <div className="flex h-screen w-full overflow-hidden">
               <Sidebar />
-              <main className="relative z-10 min-h-0 flex-1 flex flex-col bg-[var(--background)] pt-16 lg:ml-56 lg:pt-0">
+              <main className="relative z-10 flex-1 flex flex-col bg-[var(--background)] pt-16 lg:ml-56 lg:pt-0 overflow-hidden">
                 {children}
               </main>
             </div>

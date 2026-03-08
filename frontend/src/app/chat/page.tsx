@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { SquarePen } from "lucide-react";
 import { ChatInput } from "@/components/chat-input";
 import { ChatMessageBubble, type ChatMessage } from "@/components/chat-message";
 import { TypingIndicator } from "@/components/typing-indicator";
@@ -151,17 +152,40 @@ export default function ChatPage() {
     }
   };
 
+  const handleNewChat = () => {
+    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+    setMessages([]);
+    setContactState("idle");
+    setPendingQuestion("");
+    setContactName("");
+    setContactEmail("");
+    setContactError("");
+  };
+
   const ownerName = config.owner_name || "Beiji";
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
-        <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide glitch-title">
-          DIGITAL TWIN
-        </h2>
-        <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest blinking-cursor">
-          Ask anything about <span className="underline">{ownerName}</span> — career, projects, hobbies, or daily life
-        </p>
+    <div className="flex h-full flex-1 flex-col">
+      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture flex items-center justify-between gap-4">
+        <div>
+          <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide glitch-title">
+            DIGITAL TWIN
+          </h2>
+          <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest blinking-cursor">
+            Ask anything about <span className="underline">{ownerName}</span> — career, projects, hobbies, or daily life
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleNewChat}
+          aria-label="New chat"
+          title="New chat"
+          className="flex shrink-0 items-center gap-2 border-2 border-[#000000] px-3 py-2 font-heading text-sm uppercase tracking-wide text-[#000000] transition-colors duration-150 hover:bg-[#000000] hover:text-[var(--primary)] cursor-pointer"
+          style={{ boxShadow: "3px 3px 0 rgba(0,0,0,0.35)" }}
+        >
+          <SquarePen className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+          New Chat
+        </button>
       </header>
 
       <div
@@ -177,7 +201,7 @@ export default function ChatPage() {
                 Type a question or use the microphone for voice input
               </p>
               <p className="mt-2 font-body text-sm text-[var(--foreground-muted)]/70">
-                Try: &ldquo;What is {ownerName}&rsquo;s experience at UOB?&rdquo; or &ldquo;Tell me about their hobbies&rdquo;
+                Try: &ldquo;What is {ownerName}&rsquo;s job experience in Singapore?&rdquo; or &ldquo;Tell me about their hobbies&rdquo;
               </p>
             </div>
           </div>
