@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 import sys
 # Add project root to path so we can import from utils
@@ -8,11 +7,10 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 from utils.base_models import TestQuestion
 import tqdm
-from rag_retrieval import fetch_context, generate_answer, rewrite_query
+from rag_retrieval import fetch_context, generate_answer
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from utils.base_models import RetrievalLLMEval
-from rag_retrieval import generate_answer
 from utils.prompt_manager import get_prompt
 from utils.config_loader import ConfigLoader
 from utils.base_models import RetrievalEval
@@ -31,7 +29,6 @@ from rag_ingestion import embeddings
 
 config = ConfigLoader()
 llm = ChatOpenAI(model=config.get_evaluator_model())
-TOP_K = config.get_top_k()
 project_root = Path(__file__).parent.parent
 TEST_QUESTIONS_FILE_PATH = str((project_root / "evaluation/eval_data.jsonl").resolve())
 

@@ -22,7 +22,7 @@ from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get
 from utils.supabase_client import supabase_client
 from document_ops import delete_document, add_document
 from rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 import traceback as _traceback
 # Pre-import eval in the main thread so its module-level code (ConfigLoader, ChatOpenAI init)

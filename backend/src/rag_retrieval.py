@@ -36,15 +36,6 @@ vectorstore = SupabaseVectorStore(
     table_name="document_chunks",
     query_name="match_documents",
 )
-retriever_similarity = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
-retriever_mmr = vectorstore.as_retriever(
-    search_type="mmr",
-    search_kwargs={
-        "k": TOP_K,
-        "lambda_mult": 0.6
-    }
-)
-
 # Thread-local vectorstore so background threads (e.g. eval) get their own
 # httpx connection and don't corrupt the main thread's Supabase client.
 _tl = threading.local()
@@ -67,14 +58,9 @@ def _get_tl_vectorstore() -> SupabaseVectorStore:
 
 
 def reload_vectorstore(new_vectorstore):
-    """Replace the global vectorstore and retrievers after re-ingestion."""
-    global vectorstore, retriever_similarity, retriever_mmr, _vs_version
+    """Replace the global vectorstore after re-ingestion."""
+    global vectorstore, _vs_version
     vectorstore = new_vectorstore
-    retriever_similarity = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
-    retriever_mmr = vectorstore.as_retriever(
-        search_type="mmr",
-        search_kwargs={"k": TOP_K, "lambda_mult": 0.6},
-    )
     _vs_version += 1  # signal all threads to rebuild their local copy
 
 

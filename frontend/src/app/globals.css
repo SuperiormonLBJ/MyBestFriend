@@ -77,19 +77,6 @@ h1, h2, h3 {
   font-weight: 400;
 }
 
-/* Hard offset shadow panels */
-.panel-shadow {
-  box-shadow: 4px 4px 0 var(--border);
-}
-
-.panel-shadow-sm {
-  box-shadow: 2px 2px 0 var(--border);
-}
-
-.text-glow {
-  text-shadow: none;
-}
-
 /* Scanline texture (used on yellow headers) */
 .header-texture {
   background-image: repeating-linear-gradient(
@@ -178,6 +165,12 @@ h1, h2, h3 {
     rgba(0,0,0,0.18) 12px
   );
   animation: progress-stripe 0.8s linear infinite;
+}
+
+/* Scanning sweep used in the knowledge processing overlay */
+@keyframes scanline {
+  0%   { top: -10%; }
+  100% { top: 110%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

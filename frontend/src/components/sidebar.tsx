@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageCircle, Settings, SlidersHorizontal, Moon, Sun, Menu } from "lucide-react";
+import { MessageCircle, Settings, Moon, Sun, Menu } from "lucide-react";
 import { useTheme } from "./theme-provider";
 import { useConfig } from "./config-provider";
 import { useState } from "react";

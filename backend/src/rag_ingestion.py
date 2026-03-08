@@ -1,10 +1,8 @@
 from pathlib import Path
-from openai import OpenAI
 from dotenv import load_dotenv
 import os
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_community.vectorstores import SupabaseVectorStore
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 import sys
 
@@ -14,15 +12,6 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from utils.config_loader import ConfigLoader
-from utils.prompt_manager import get_prompt
-
-from langchain_community.document_loaders import PlaywrightURLLoader, PyPDFLoader, UnstructuredHTMLLoader
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-
-from langchain_community.document_loaders import WebBaseLoader
-from urllib.parse import urlparse
-from pathlib import Path
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
@@ -44,24 +33,15 @@ RAG Ingestion Module
 - Add into vector database
 """
 
-#/Users/beijim4/Desktop/Projects-AI/MyBestFriend/data
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 config = ConfigLoader()
 # Resolve DATA_DIR to absolute path relative to project root
 data_dir_from_config = config.get_data_dir()
-# Resolve relative path from project root
 DATA_DIR = str((project_root / data_dir_from_config).resolve())
 MODEL = config.get_llm_model()
-TOP_K = config.get_top_k()
 CHUNK_SIZE = config.get_chunk_size()
 OVERLAP = config.get_overlap()
 
 embeddings = OpenAIEmbeddings(model=config.get_embedding_model())
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def _parse_md_frontmatter(content: str):
     """
@@ -141,66 +121,8 @@ def load_document_md() -> str:
     print(f"loaded {len(documents)} md documents")
     return documents
 
-def load_document_pdf() -> str:
-    documents = []
-    doc_type = os.path.basename(DATA_DIR)
-    loader = DirectoryLoader(DATA_DIR, glob="*.pdf", loader_cls=PyPDFLoader)
-    folder_docs = loader.load()
-    for doc in folder_docs:
-        doc.metadata["doc_type"] = doc_type
-        doc.metadata["source"] = doc.metadata.get("source").split("/")[-1]
-        documents.append(doc)
-    
-    return documents
-
-def load_document_url():
-    """
-    Load documents from a file containing URLs and save them as text files
-    """
-    documents = []
-
-    urls_file = Path(DATA_DIR) / "urls.txt"
-    if not urls_file.exists():
-        return documents
-
-    with open(urls_file) as f:
-        urls = [u.strip() for u in f.readlines() if u.strip()]
-
-    if not urls:
-        return documents
-
-    loader = WebBaseLoader(urls)
-    loaded_docs = loader.load()
-
-    for doc in loaded_docs:
-        doc.page_content = doc.page_content.encode("latin1", errors="ignore").decode("utf-8", errors="ignore")
-        parsed = urlparse(doc.metadata.get("source", ""))
-        doc.metadata["doc_type"] = "url"
-        doc.metadata["source"] = parsed.netloc
-        if doc.metadata.get("source") == "www.linkedin.com":
-            llm = ChatOpenAI(model=MODEL, temperature=0)
-            messages = [SystemMessage(content=get_prompt("LINKEDIN_PROMPT").format(raw_linkedin_text=doc.page_content))]
-            messages.append(HumanMessage(content=doc.page_content))
-            doc.page_content = llm.invoke(messages).content
-        doc.metadata["full_url"] = doc.metadata.get("source")
-        documents.append(doc)
-        with open(Path(DATA_DIR) / (doc.metadata.get("source") + ".txt"), "w") as f:
-            f.write(doc.page_content)
-
-    print(f"Loaded {len(documents)} URL documents")
-    return documents
-
 def load_document():
-    # documents = load_document_md() + load_document_pdf() + load_document_url()
-    documents = load_document_md()
-    return documents
-
-def create_chunks(documents):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=OVERLAP)
-    chunks = text_splitter.split_documents(documents)
-
-    print(f"Divided into {len(chunks)} chunks")
-    return chunks
+    return load_document_md()
 
 def create_chunks_markdown(documents):
     # markdown splitter

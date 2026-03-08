@@ -362,30 +362,6 @@ export default function SettingsPage() {
                   </select>
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Field
-                  label="Evaluator model"
-                  hint="Used for answer quality scoring."
-                >
-                  <select
-                    value={form.evaluator_model ?? ""}
-                    onChange={(e) => set("evaluator_model", e.target.value)}
-                    className={selectCls}
-                  >
-                    {form.evaluator_model &&
-                      !CHAT_MODELS.includes(form.evaluator_model) && (
-                        <option value={form.evaluator_model}>
-                          {form.evaluator_model}
-                        </option>
-                      )}
-                    {CHAT_MODELS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
             </div>
           </SectionCard>
 

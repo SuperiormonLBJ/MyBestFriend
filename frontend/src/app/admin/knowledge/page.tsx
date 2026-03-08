@@ -135,7 +135,7 @@ function ProcessingOverlay({
         />
       </div>
 
-      <div className="relative w-full max-w-sm mx-4 rounded-xl border border-[var(--border)] bg-[var(--background-elevated)] p-8 glow-border text-center space-y-6">
+      <div className="relative w-full max-w-sm mx-4 rounded-xl border border-[var(--border)] bg-[var(--background-elevated)] p-8 text-center space-y-6">
         <div className="flex justify-center">
           <div className="relative">
             <Icon
