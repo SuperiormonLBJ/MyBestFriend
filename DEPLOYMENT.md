@@ -74,6 +74,16 @@ The backend allows the frontend origin via `CORS_ORIGINS`. Set it to your Vercel
 
 The frontend uses `BACKEND_URL` (or `NEXT_PUBLIC_BACKEND_URL`) from `frontend/src/lib/backend.ts`; server-side API routes proxy to this URL.
 
+**"Backend stream error: Not Found" / "couldn't connect to the backend":** (1) In Vercel go to **Project → Settings → Environment Variables**. Add **BACKEND_URL** = your Railway backend URL with **no trailing slash** (e.g. `https://your-app.up.railway.app`). Apply to Production (and Preview if you use it). (2) **Redeploy**: Deployments → ⋮ on latest deployment → **Redeploy**. Env vars are read at build/run time, so a redeploy is required. (3) Confirm the backend is up: open `https://your-railway-url/health` in a browser; you should see `{"status":"ok"}`.
+
+**Where to see detailed logs on Vercel:**  
+- **You must click a log row:** The "Messages" column in the list is often empty. **Click a row** in the log list (e.g. a `POST` to `/api/chat/stream`) to open the detail panel on the right — **Messages** (your `console.log` / `console.error` output) appear there.  
+- **Filter to the API route:** In the search/filter box, type **`/api/chat/stream`** or **`api`** so you see API route invocations instead of only page requests (e.g. `GET /chat`). Look for **POST** requests when you send a message.  
+- **Show errors:** Under "Contains Console Level", **check "Error"** to list only entries that have errors; those will show the "backend error" or "exception" logs.  
+- **Tags:** Every log from the chat proxy is prefixed with **`[chat/stream]`** (e.g. "request start", "fetching backend", "backend error"). Search for that to find the right entries.
+
+**"No response received" / empty bot reply:** The chat route streams the backend response. If the stream is empty or truncated (e.g. Vercel function timeout), the browser gets no SSE events. The route sets **`maxDuration = 60`**; on Hobby the limit may be 10s — raise it in **Settings → Functions → Max Duration**, or try shorter questions.
+
 ---
 
 ## 3. Checklist

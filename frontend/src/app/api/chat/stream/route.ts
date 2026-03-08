@@ -3,6 +3,8 @@ import { BACKEND_URL } from "@/lib/backend";
 
 const LOG_TAG = "[chat/stream]";
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   console.log(LOG_TAG, "request start");
   try {

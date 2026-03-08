@@ -163,7 +163,15 @@ export default function ChatPage() {
         }
       }
       if (firstToken) {
-        setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "No response received." }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantId,
+            role: "assistant",
+            content:
+              "No response was received from the server. The request may have timed out (try a shorter question) or the stream may not have reached the browser. If it keeps happening, check Vercel function duration and Railway backend logs.",
+          },
+        ]);
         setStreaming(false);
       }
     } catch (err) {
