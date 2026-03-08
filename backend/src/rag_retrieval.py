@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
+from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
 
 import os
 import sys
@@ -17,7 +18,6 @@ from utils.prompt_manager import get_prompt
 from utils.supabase_client import supabase_client
 import numpy as np
 from langchain_community.vectorstores.utils import maximal_marginal_relevance
-from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -173,14 +173,13 @@ def combine_all_user_questions(question: str, history: list) -> str:
     else:
         return question
 
-def generate_answer(query, history: list[dict] = []):
-    """
-    Generate the answer for the query
 
-    history from gradio is a list of dictionaries with keys "role" and "content" this is OpenAI format, need to convert it to the format that langchain can use
+def generate_answer(query, history: list[dict] = [], requester_name: str = "", requester_email: str = ""):
     """
-    
-    # combine all user questions into a single question
+    Generate the answer for the query.
+    Returns (answer: str, context_docs: list, no_info: bool).
+    no_info=True when the LLM signals the context is insufficient via [[NO_INFO]].
+    """
     rewritten_query = rewrite_query(query, history)
     combined_query_rewritten = combine_all_user_questions(rewritten_query, history)
     combined_question_original = combine_all_user_questions(query, history)
@@ -189,22 +188,22 @@ def generate_answer(query, history: list[dict] = []):
     context_docs = context_docs_rewritten + context_docs_original
 
     context_docs = deduplicate_context(context_docs)
-
     reranked_context_docs = rerank_documents(query, context_docs, top_k=TOP_K)
-    
     context = "\n".join([doc.page_content for doc in reranked_context_docs])
 
-    # convert history to langchain format
     messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
-
-    messages.extend(convert_to_messages(history)) # system message + previous history
+    messages.extend(convert_to_messages(history))
     messages.append(HumanMessage(content=query))
 
     response = llm.invoke(messages)
 
-    print(f"Generated answer with model: {config.get_generator_model()}")
+    raw = response.content or ""
+    no_info = "[[NO_INFO]]" in raw
+    answer = raw.replace("[[NO_INFO]]", "").strip()
 
-    return response.content, context_docs
+    print(f"Generated answer with model: {config.get_generator_model()} | no_info={no_info}")
+
+    return answer, context_docs, no_info
 
 
 def get_knowledge_tree():

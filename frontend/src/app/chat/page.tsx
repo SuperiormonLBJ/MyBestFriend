@@ -14,8 +14,10 @@ async function fetchAnswer(message: string, history: { role: string; content: st
   });
   if (!res.ok) throw new Error("Failed to get response");
   const data = await res.json();
-  return data.answer as string;
+  return { answer: data.answer as string, no_info: data.no_info as boolean };
 }
+
+type ContactState = "idle" | "open" | "sending" | "sent" | "error";
 
 export default function ChatPage() {
   const { config } = useConfig();
@@ -23,9 +25,16 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Contact form state
+  const [pendingQuestion, setPendingQuestion] = useState("");
+  const [contactState, setContactState] = useState<ContactState>("idle");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactError, setContactError] = useState("");
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, contactState]);
 
   const handleSend = async (content: string) => {
     const userMessage: ChatMessage = {
@@ -35,10 +44,12 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
+    setContactState("idle");
+    setPendingQuestion("");
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const answer = await fetchAnswer(content, history);
+      const { answer, no_info } = await fetchAnswer(content, history);
 
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -46,7 +57,12 @@ export default function ChatPage() {
         content: answer,
       };
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch (err) {
+
+      if (no_info) {
+        setPendingQuestion(content);
+        setContactState("open");
+      }
+    } catch {
       const errorMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -55,6 +71,33 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contactName.trim() || !contactEmail.trim()) {
+      setContactError("Please fill in both your name and email.");
+      return;
+    }
+    setContactError("");
+    setContactState("sending");
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requester_name: contactName.trim(),
+          requester_email: contactEmail.trim(),
+          question: pendingQuestion,
+        }),
+      });
+      if (!res.ok) throw new Error("send failed");
+      setContactState("sent");
+      setContactName("");
+      setContactEmail("");
+    } catch {
+      setContactState("error");
     }
   };
 
@@ -90,6 +133,65 @@ export default function ChatPage() {
             <ChatMessageBubble key={m.id} message={m} />
           ))}
           {loading && <TypingIndicator />}
+
+          {/* Contact form — shown when the bot couldn't find the answer */}
+          {contactState !== "idle" && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+              {contactState === "sent" ? (
+                <p className="text-sm text-[var(--foreground-muted)]">
+                  ✅ Your question has been sent! You&apos;ll hear back soon.
+                </p>
+              ) : contactState === "error" ? (
+                <p className="text-sm text-red-500">
+                  Failed to send. Please try again or reach out directly.
+                </p>
+              ) : (
+                <>
+                  <p className="mb-4 text-sm text-[var(--foreground-muted)]">
+                    I don&apos;t have that information yet. Leave your details and I&apos;ll pass your question along.
+                  </p>
+                  <form onSubmit={handleContactSubmit} className="flex flex-col gap-3">
+                    <input
+                      type="text"
+                      placeholder="Your name"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      disabled={contactState === "sending"}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Your email"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                      disabled={contactState === "sending"}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50"
+                    />
+                    {contactError && (
+                      <p className="text-xs text-red-500">{contactError}</p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={contactState === "sending"}
+                        className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        {contactState === "sending" ? "Sending…" : "Send question"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setContactState("idle")}
+                        disabled={contactState === "sending"}
+                        className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground-muted)] transition-colors hover:bg-[var(--border)] disabled:opacity-50"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

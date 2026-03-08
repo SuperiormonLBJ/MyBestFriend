@@ -5,6 +5,10 @@ Run with: uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
 import threading
 import time
 import uuid
+import smtplib
+import os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,7 +16,7 @@ from pydantic import BaseModel
 from rag_retrieval import generate_answer, get_knowledge_tree, reload_vectorstore
 from utils.config_loader import ConfigLoader
 from utils.prompts import get_reference_template
-from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get_default_content
+from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get_default_content, sync_defaults
 from utils.supabase_client import supabase_client
 from document_ops import delete_document, add_document
 from rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
@@ -25,6 +29,9 @@ from eval import load_test_questions, evaluate_LLM, evaluate_all
 
 config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
+
+# Sync all hardcoded prompt defaults to Supabase on startup so code changes take effect immediately.
+sync_defaults()
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,17 +49,82 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    no_info: bool = False
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    answer, _ = generate_answer(request.message, request.history)
-    return ChatResponse(answer=answer)
+    answer, _, no_info = generate_answer(request.message, request.history)
+    return ChatResponse(answer=answer, no_info=no_info)
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Contact / inquiry email
+# ---------------------------------------------------------------------------
+
+def _send_inquiry_email(requester_name: str, requester_email: str, question: str) -> None:
+    """Send an inquiry email to the recipient configured in config.yaml."""
+    recipient = config.get_recipient_email()
+    if not recipient:
+        raise ValueError("RECIPIENT_EMAIL is not configured.")
+
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+
+    if not smtp_user or not smtp_password:
+        raise ValueError("SMTP_USER and SMTP_PASSWORD environment variables are required.")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"[MyBestFriend] Question from {requester_name}"
+    msg["From"] = smtp_user
+    msg["To"] = recipient
+    msg["Reply-To"] = requester_email
+
+    body = (
+        f"Someone asked a question that wasn't in your knowledge base.\n\n"
+        f"Name: {requester_name}\n"
+        f"Email: {requester_email}\n\n"
+        f"Question:\n{question}\n"
+    )
+    msg.attach(MIMEText(body, "plain"))
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(smtp_user, smtp_password)
+        server.sendmail(smtp_user, recipient, msg.as_string())
+
+
+class ContactRequest(BaseModel):
+    requester_name: str
+    requester_email: str
+    question: str
+
+
+@app.post("/api/contact")
+def api_contact(request: ContactRequest):
+    """Send an inquiry email to the owner when the chatbot couldn't answer a question."""
+    if not request.requester_name.strip() or not request.requester_email.strip() or not request.question.strip():
+        raise HTTPException(status_code=400, detail="name, email, and question are required")
+    try:
+        _send_inquiry_email(
+            requester_name=request.requester_name.strip(),
+            requester_email=request.requester_email.strip(),
+            question=request.question.strip(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        print(f"[contact] Email send error: {e}")
+        raise HTTPException(status_code=502, detail="Failed to send email. Please try again later.")
+    return {"status": "sent"}
 
 
 @app.get("/api/config")

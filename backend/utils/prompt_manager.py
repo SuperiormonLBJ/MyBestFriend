@@ -83,6 +83,22 @@ def seed_if_empty() -> None:
         print(f"[prompt_manager] Seed warning (non-fatal): {e}")
 
 
+def sync_defaults() -> None:
+    """Upsert all hardcoded defaults into Supabase so code changes are always applied on startup."""
+    try:
+        rows = [
+            {"key": k, "content": v["content"], "description": v["description"]}
+            for k, v in _DEFAULTS.items()
+        ]
+        _client().table("prompts").upsert(rows, on_conflict="key").execute()
+        # Clear the thread-local client so the next get_prompt call reads the fresh values.
+        if hasattr(_tl, "client"):
+            del _tl.client
+        print(f"[prompt_manager] Synced {len(rows)} default prompts to Supabase")
+    except Exception as e:
+        print(f"[prompt_manager] sync_defaults warning (non-fatal): {e}")
+
+
 def get_prompt(key: str) -> str:
     """
     Return the current content for the given prompt key.

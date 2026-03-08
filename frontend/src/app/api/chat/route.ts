@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await res.json();
-    return NextResponse.json({ answer: data.answer });
+    return NextResponse.json({ answer: data.answer, no_info: data.no_info ?? false });
   } catch (err) {
     console.error("Chat API error:", err);
     return NextResponse.json(
