@@ -151,14 +151,16 @@ export default function ChatPage() {
     }
   };
 
+  const ownerName = config.owner_name || "Beiji";
+
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
-        <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
-          {config.chat_title.toUpperCase()}
+      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
+        <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide glitch-title">
+          DIGITAL TWIN
         </h2>
-        <p className="mt-1 text-sm text-[var(--foreground-muted)] font-body">
-          {config.chat_subtitle}
+        <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest blinking-cursor">
+          Ask anything about <span className="underline">{ownerName}</span> — career, projects, hobbies, or daily life
         </p>
       </header>
 
@@ -170,12 +172,14 @@ export default function ChatPage() {
       >
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <p className="text-[var(--foreground-muted)] font-body">
-              {config.empty_state_hint}
-            </p>
-            <p className="text-sm text-[var(--foreground-muted)]/80 font-body">
-              {config.empty_state_examples}
-            </p>
+            <div className="border-2 border-[var(--border)] px-8 py-6" style={{ boxShadow: "5px 5px 0 var(--border)" }}>
+              <p className="font-body text-base font-semibold text-[var(--foreground-muted)] uppercase tracking-wide">
+                Type a question or use the microphone for voice input
+              </p>
+              <p className="mt-2 font-body text-sm text-[var(--foreground-muted)]/70">
+                Try: &ldquo;What is {ownerName}&rsquo;s experience at UOB?&rdquo; or &ldquo;Tell me about their hobbies&rdquo;
+              </p>
+            </div>
           </div>
         )}
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -186,18 +190,21 @@ export default function ChatPage() {
 
           {/* Contact form — shown when the bot couldn't find the answer */}
           {contactState !== "idle" && (
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+            <div
+              className="border-2 border-[var(--border)] bg-[var(--surface)] p-5"
+              style={{ boxShadow: "5px 5px 0 var(--border)" }}
+            >
               {contactState === "sent" ? (
-                <p className="text-sm text-[var(--foreground-muted)]">
-                  ✅ Your question has been sent! You&apos;ll hear back soon.
+                <p className="font-body text-sm font-semibold text-[var(--foreground)] uppercase tracking-wide">
+                  Your question has been sent! You&apos;ll hear back soon.
                 </p>
               ) : contactState === "error" ? (
-                <p className="text-sm text-red-500">
+                <p className="font-body text-sm font-semibold text-[var(--secondary)] uppercase tracking-wide">
                   Failed to send. Please try again or reach out directly.
                 </p>
               ) : (
                 <>
-                  <p className="mb-4 text-sm text-[var(--foreground-muted)]">
+                  <p className="mb-4 font-body text-sm font-semibold text-[var(--foreground-muted)] uppercase tracking-wide">
                     I don&apos;t have that information yet. Leave your details and I&apos;ll pass your question along.
                   </p>
                   <form onSubmit={handleContactSubmit} className="flex flex-col gap-3">
@@ -207,7 +214,7 @@ export default function ChatPage() {
                       value={contactName}
                       onChange={(e) => setContactName(e.target.value)}
                       disabled={contactState === "sending"}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50"
+                      className="border-2 border-[var(--border)] bg-[var(--background)] px-3 py-2 font-body text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-50"
                     />
                     <input
                       type="email"
@@ -215,16 +222,16 @@ export default function ChatPage() {
                       value={contactEmail}
                       onChange={(e) => setContactEmail(e.target.value)}
                       disabled={contactState === "sending"}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50"
+                      className="border-2 border-[var(--border)] bg-[var(--background)] px-3 py-2 font-body text-sm text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-50"
                     />
                     {contactError && (
-                      <p className="text-xs text-red-500">{contactError}</p>
+                      <p className="font-body text-xs font-semibold text-[var(--secondary)] uppercase">{contactError}</p>
                     )}
                     <div className="flex gap-2">
                       <button
                         type="submit"
                         disabled={contactState === "sending"}
-                        className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                        className="border-2 border-[var(--border)] bg-[var(--primary)] px-4 py-2 font-body text-sm font-bold uppercase tracking-wide text-[#000000] transition-colors hover:bg-[var(--primary-hover)] disabled:opacity-50 cursor-pointer"
                       >
                         {contactState === "sending" ? "Sending…" : "Send question"}
                       </button>
@@ -232,7 +239,7 @@ export default function ChatPage() {
                         type="button"
                         onClick={() => setContactState("idle")}
                         disabled={contactState === "sending"}
-                        className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground-muted)] transition-colors hover:bg-[var(--border)] disabled:opacity-50"
+                        className="border-2 border-[var(--border)] bg-transparent px-4 py-2 font-body text-sm font-bold uppercase tracking-wide text-[var(--foreground-muted)] transition-colors hover:bg-[var(--background-elevated)] hover:text-[var(--foreground)] disabled:opacity-50 cursor-pointer"
                       >
                         Dismiss
                       </button>
@@ -245,12 +252,12 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-[var(--border)] bg-[var(--background)] p-4">
+      <div className="shrink-0 border-t-2 border-[var(--border)] bg-[var(--background)] p-4">
         <div className="mx-auto max-w-3xl">
           <ChatInput
             onSend={handleSend}
             disabled={loading || streaming}
-            placeholder={config.input_placeholder}
+            placeholder={`Ask anything about ${ownerName}…`}
           />
         </div>
       </div>

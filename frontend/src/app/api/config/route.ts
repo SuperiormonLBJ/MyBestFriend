@@ -57,14 +57,7 @@ export async function PUT(request: Request) {
 function getDefaultConfig() {
   return {
     app_name: "MyBestFriend",
-    chat_title: "Digital Twin",
-    chat_subtitle:
-      "Ask anything about me — career, projects, hobbies, or daily life",
-    input_placeholder: "Ask anything about me...",
-    empty_state_hint:
-      "Type a question or use the microphone for voice input",
-    empty_state_examples:
-      'Try: "What is Beiji\'s experience at UOB?" or "Tell me about his hobbies"',
+    owner_name: "Beiji",
     embedding_model: "text-embedding-3-large",
     generator_model: "gpt-4o-mini",
     llm_model: "gpt-4o-mini",

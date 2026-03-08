@@ -151,11 +151,7 @@ def get_config():
 
 class ConfigUpdateRequest(BaseModel):
     app_name: str | None = None
-    chat_title: str | None = None
-    chat_subtitle: str | None = None
-    input_placeholder: str | None = None
-    empty_state_hint: str | None = None
-    empty_state_examples: str | None = None
+    owner_name: str | None = None
     embedding_model: str | None = None
     generator_model: str | None = None
     llm_model: str | None = None

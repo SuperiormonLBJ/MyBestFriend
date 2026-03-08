@@ -159,11 +159,7 @@ class ConfigLoader:
         """Return frontend-facing config (safe to expose via API)."""
         default = {
             "app_name": "MyBestFriend",
-            "chat_title": "Digital Twin",
-            "chat_subtitle": "Ask anything about me — career, projects, hobbies, or daily life",
-            "input_placeholder": "Ask anything about me...",
-            "empty_state_hint": "Type a question or use the microphone for voice input",
-            "empty_state_examples": 'Try: "What is Beiji\'s experience at UOB?" or "Tell me about his hobbies"',
+            "owner_name": "Beiji",
         }
         frontend = self.config.get("frontend") or {}
         return {**default, **frontend}
@@ -196,10 +192,7 @@ class ConfigLoader:
         Accepts frontend.* keys, model keys, and recipient_email.
         config.yaml is NOT modified — Supabase is the source of truth at runtime.
         """
-        frontend_keys = {
-            "app_name", "chat_title", "chat_subtitle",
-            "input_placeholder", "empty_state_hint", "empty_state_examples",
-        }
+        frontend_keys = {"app_name", "owner_name"}
         model_key_map = {
             "embedding_model": "EMBEDDING_MODEL",
             "generator_model": "GENERATOR_MODEL",

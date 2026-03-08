@@ -6,7 +6,7 @@ import { Sidebar } from "@/components/sidebar";
 
 export const metadata: Metadata = {
   title: "MyBestFriend — Digital Twin",
-  description: "Ask anything about Beiji — career, projects, hobbies, and more",
+  description: "Ask anything about the app owner — career, projects, hobbies, and more",
 };
 
 export default function RootLayout({

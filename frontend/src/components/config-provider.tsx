@@ -10,11 +10,7 @@ import {
 
 export type FrontendConfig = {
   app_name: string;
-  chat_title: string;
-  chat_subtitle: string;
-  input_placeholder: string;
-  empty_state_hint: string;
-  empty_state_examples: string;
+  owner_name: string;
 };
 
 export type ModelsConfig = {
@@ -33,13 +29,7 @@ export type FullConfig = FrontendConfig &
 
 const defaultConfig: FrontendConfig = {
   app_name: "MyBestFriend",
-  chat_title: "Digital Twin",
-  chat_subtitle:
-    "Ask anything about me — career, projects, hobbies, or daily life",
-  input_placeholder: "Ask anything about me...",
-  empty_state_hint: "Type a question or use the microphone for voice input",
-  empty_state_examples:
-    'Try: "What is Beiji\'s experience at UOB?" or "Tell me about his hobbies"',
+  owner_name: "Beiji",
 };
 
 type ConfigContextType = {

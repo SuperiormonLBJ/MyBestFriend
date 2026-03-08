@@ -8,7 +8,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Palette,
-  MessageSquare,
   Bell,
   Cpu,
 } from "lucide-react";
@@ -33,11 +32,7 @@ const CHAT_MODELS = [
 
 const EMPTY_FORM: FullConfig = {
   app_name: "",
-  chat_title: "",
-  chat_subtitle: "",
-  input_placeholder: "",
-  empty_state_hint: "",
-  empty_state_examples: "",
+  owner_name: "",
   embedding_model: "",
   generator_model: "",
   llm_model: "",
@@ -89,7 +84,7 @@ function SectionCard({
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--background-elevated)]">
       <div className="flex items-start gap-3 border-b border-[var(--border)] px-6 py-4">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--primary)]/10 text-[var(--primary)]">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center border-2 border-[var(--border)] bg-[var(--border)] text-[var(--background)]">
           {icon}
         </div>
         <div>
@@ -149,19 +144,19 @@ export default function SettingsPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       {/* Header */}
-      <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
+      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
         <Link
           href="/admin"
-          className="mb-2 inline-block text-sm text-[var(--foreground-muted)] hover:text-[var(--primary)] transition-colors"
+          className="mb-2 inline-block font-body text-sm font-semibold text-[#000000]/60 hover:text-[#000000]"
         >
           ← Admin Panel
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
+            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
               SETTINGS
             </h2>
-            <p className="mt-0.5 text-sm text-[var(--foreground-muted)]">
+            <p className="mt-0.5 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
               Changes are saved to Supabase and take effect immediately.
             </p>
           </div>
@@ -169,7 +164,7 @@ export default function SettingsPage() {
             type="button"
             onClick={() => refetch()}
             disabled={isLoading}
-            className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10 hover:text-[var(--primary)] disabled:opacity-50 transition-colors cursor-pointer"
+            className="flex items-center gap-2 border-2 border-[#000000]/50 px-3 py-1.5 font-body text-sm font-bold text-[#000000]/80 hover:border-[#000000] hover:bg-[#000000]/10 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
@@ -183,10 +178,10 @@ export default function SettingsPage() {
           {/* Alert */}
           {message && (
             <div
-              className={`flex items-center gap-2.5 rounded-lg border px-4 py-3 text-sm ${
+              className={`flex items-center gap-2.5 border-2 px-4 py-3 font-body text-sm font-semibold ${
                 message.type === "success"
-                  ? "border-[var(--primary)]/40 bg-[var(--primary)]/10 text-[var(--primary)]"
-                  : "border-red-500/40 bg-red-500/10 text-red-400"
+                  ? "border-[var(--border)] bg-[var(--primary)]/20 text-[var(--foreground)]"
+                  : "border-red-500 bg-red-500/10 text-red-500"
               }`}
             >
               {message.type === "success" ? (
@@ -202,80 +197,31 @@ export default function SettingsPage() {
           <SectionCard
             icon={<Palette className="h-4 w-4" />}
             title="Identity"
-            description="The app name shown in the browser tab and sidebar."
-          >
-            <Field label="App name">
-              <input
-                type="text"
-                value={form.app_name ?? ""}
-                onChange={(e) => set("app_name", e.target.value)}
-                placeholder="MyBestFriend"
-                className={inputCls}
-              />
-            </Field>
-          </SectionCard>
-
-          {/* Section 2 — Chat Display */}
-          <SectionCard
-            icon={<MessageSquare className="h-4 w-4" />}
-            title="Chat display"
-            description="Controls the text users see in the chat interface."
+            description="Basic info used throughout the app and chat interface."
           >
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Chat title">
-                  <input
-                    type="text"
-                    value={form.chat_title ?? ""}
-                    onChange={(e) => set("chat_title", e.target.value)}
-                    placeholder="Digital Twin"
-                    className={inputCls}
-                  />
-                </Field>
-                <Field label="Chat subtitle">
-                  <input
-                    type="text"
-                    value={form.chat_subtitle ?? ""}
-                    onChange={(e) => set("chat_subtitle", e.target.value)}
-                    placeholder="Ask anything about me…"
-                    className={inputCls}
-                  />
-                </Field>
-              </div>
-              <Field label="Input placeholder">
+              <Field label="App name">
                 <input
                   type="text"
-                  value={form.input_placeholder ?? ""}
-                  onChange={(e) => set("input_placeholder", e.target.value)}
-                  placeholder="Ask anything about me..."
+                  value={form.app_name ?? ""}
+                  onChange={(e) => set("app_name", e.target.value)}
+                  placeholder="MyBestFriend"
                   className={inputCls}
                 />
               </Field>
-              <Field label="Empty state hint">
+              <Field label="Owner name" hint="Your name — used in chat prompts and greetings. Default: Beiji">
                 <input
                   type="text"
-                  value={form.empty_state_hint ?? ""}
-                  onChange={(e) => set("empty_state_hint", e.target.value)}
-                  placeholder="Type a question or use the microphone…"
+                  value={form.owner_name ?? ""}
+                  onChange={(e) => set("owner_name", e.target.value)}
+                  placeholder="Beiji"
                   className={inputCls}
-                />
-              </Field>
-              <Field
-                label="Empty state examples"
-                hint="Example prompts shown when the chat is empty."
-              >
-                <textarea
-                  rows={3}
-                  value={form.empty_state_examples ?? ""}
-                  onChange={(e) => set("empty_state_examples", e.target.value)}
-                  placeholder='Try: "What is your experience at UOB?" or "Tell me about your hobbies"'
-                  className={`${inputCls} resize-none`}
                 />
               </Field>
             </div>
           </SectionCard>
 
-          {/* Section 3 — Notifications */}
+          {/* Section 2 — Notifications */}
           <SectionCard
             icon={<Bell className="h-4 w-4" />}
             title="Notifications"
@@ -292,7 +238,7 @@ export default function SettingsPage() {
             </Field>
           </SectionCard>
 
-          {/* Section 4 — AI Models */}
+          {/* Section 3 — AI Models */}
           <SectionCard
             icon={<Cpu className="h-4 w-4" />}
             title="AI models"
@@ -449,7 +395,7 @@ export default function SettingsPage() {
               type="button"
               onClick={handleSave}
               disabled={saving || isLoading}
-              className="flex items-center gap-2 rounded-md bg-[var(--primary)] px-6 py-2.5 text-sm font-medium text-[var(--background)] hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors cursor-pointer"
+              className="flex items-center gap-2 border-2 border-[var(--border)] bg-[var(--primary)] px-6 py-2.5 font-body text-sm font-bold text-[#000000] hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors cursor-pointer"
             >
               <Save className="h-4 w-4" />
               {saving ? "Saving…" : "Save changes"}

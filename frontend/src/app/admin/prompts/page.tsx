@@ -147,19 +147,19 @@ export default function PromptsPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       {/* Header */}
-      <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
+      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
         <Link
           href="/admin"
-          className="mb-2 inline-block text-sm text-[var(--foreground-muted)] hover:text-[var(--primary)] transition-colors"
+          className="mb-2 inline-block font-body text-sm font-semibold text-[#000000]/60 hover:text-[#000000]"
         >
           ← Admin Panel
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
+            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
               PROMPTS
             </h2>
-            <p className="mt-0.5 text-sm text-[var(--foreground-muted)]">
+            <p className="mt-0.5 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
               Edit LLM system prompts. Changes are saved to Supabase and take effect immediately.
             </p>
           </div>
@@ -167,7 +167,7 @@ export default function PromptsPage() {
             type="button"
             onClick={loadPrompts}
             disabled={loading}
-            className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10 hover:text-[var(--primary)] disabled:opacity-50 transition-colors cursor-pointer"
+            className="flex items-center gap-2 border-2 border-[#000000]/50 px-3 py-1.5 font-body text-sm font-bold text-[#000000]/80 hover:border-[#000000] hover:bg-[#000000]/10 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
@@ -204,7 +204,7 @@ export default function PromptsPage() {
                     className="w-full flex items-center justify-between gap-4 px-6 py-4 text-left hover:bg-[var(--primary)]/5 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <code className="shrink-0 rounded-md bg-[var(--primary)]/10 px-2 py-0.5 text-xs font-mono text-[var(--primary)]">
+                      <code className="shrink-0 border border-[var(--border)] bg-[var(--border)] px-2 py-0.5 text-xs font-mono text-[var(--background)]">
                         {p.key}
                       </code>
                       <div className="min-w-0">
@@ -236,10 +236,10 @@ export default function PromptsPage() {
                       {/* Status message */}
                       {s.message && (
                         <div
-                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                          className={`flex items-center gap-2 border-2 px-3 py-2 font-body text-xs font-semibold ${
                             s.message.type === "success"
-                              ? "border-[var(--primary)]/40 bg-[var(--primary)]/10 text-[var(--primary)]"
-                              : "border-red-500/40 bg-red-500/10 text-red-400"
+                              ? "border-[var(--border)] bg-[var(--primary)]/20 text-[var(--foreground)]"
+                              : "border-red-500 bg-red-500/10 text-red-500"
                           }`}
                         >
                           {s.message.type === "success" ? (
@@ -280,7 +280,7 @@ export default function PromptsPage() {
                             type="button"
                             onClick={() => handleSave(p.key)}
                             disabled={s.saving || s.resetting || !s.draft.trim()}
-                            className="flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-4 py-1.5 text-xs font-medium text-[var(--background)] hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors cursor-pointer"
+                            className="flex items-center gap-1.5 border-2 border-[var(--border)] bg-[var(--primary)] px-4 py-1.5 font-body text-xs font-bold text-[#000000] hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors cursor-pointer"
                           >
                             <Save className="h-3.5 w-3.5" />
                             {s.saving ? "Saving…" : "Save"}

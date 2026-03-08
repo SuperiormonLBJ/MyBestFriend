@@ -66,7 +66,8 @@ export function ChatInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex items-end gap-2 rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-2 transition-all duration-200 focus-within:border-[var(--primary)] focus-within:shadow-[0_0_16px_var(--primary-glow)]"
+      className="flex items-end gap-2 border-2 border-[var(--border)] bg-[var(--background-elevated)] p-2 transition-colors duration-200"
+      style={{ boxShadow: "4px 4px 0 var(--border)" }}
     >
       <label htmlFor="chat-input" className="sr-only">
         Your question
@@ -84,7 +85,7 @@ export function ChatInput({
         placeholder={placeholder}
         rows={1}
         disabled={disabled}
-        className="min-h-[44px] max-h-32 flex-1 resize-none rounded-md border-0 bg-transparent px-4 py-3 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none disabled:opacity-50"
+        className="min-h-[44px] max-h-32 flex-1 resize-none border-0 bg-transparent px-4 py-3 font-body text-base text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] focus:outline-none disabled:opacity-50"
         aria-label="Type your message"
       />
       <div className="flex shrink-0 gap-1">
@@ -93,16 +94,16 @@ export function ChatInput({
             type="button"
             onClick={isListening ? stopListening : startListening}
             aria-label={isListening ? "Stop listening" : "Start voice input"}
-            className={`flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 cursor-pointer ${
+            className={`flex h-10 w-10 items-center justify-center border-2 border-[var(--border)] transition-colors duration-200 cursor-pointer ${
               isListening
-                ? "bg-red-500/20 text-red-500 hover:bg-red-500/30"
-                : "text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10 hover:text-[var(--primary)]"
+                ? "bg-[var(--secondary)] text-white"
+                : "bg-transparent text-[var(--foreground-muted)] hover:bg-[var(--primary)] hover:text-[var(--foreground)]"
             }`}
           >
             {isListening ? (
-              <MicOff className="h-5 w-5" strokeWidth={2} />
+              <MicOff className="h-5 w-5" strokeWidth={2.5} />
             ) : (
-              <Mic className="h-5 w-5" strokeWidth={2} />
+              <Mic className="h-5 w-5" strokeWidth={2.5} />
             )}
           </button>
         )}
@@ -110,12 +111,12 @@ export function ChatInput({
           type="submit"
           disabled={disabled || !input.trim()}
           aria-label="Send message"
-          className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--primary)] text-[#08090C] font-semibold transition-all duration-200 hover:bg-[var(--primary-hover)] hover:shadow-[0_0_12px_var(--primary-glow)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none cursor-pointer"
+          className="flex h-10 w-10 items-center justify-center border-2 border-[var(--border)] bg-[var(--primary)] text-[#000000] font-semibold transition-colors duration-200 hover:bg-[var(--primary-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
           {disabled ? (
-            <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+            <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2.5} />
           ) : (
-            <Send className="h-5 w-5" strokeWidth={2} />
+            <Send className="h-5 w-5" strokeWidth={2.5} />
           )}
         </button>
       </div>

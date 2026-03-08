@@ -144,7 +144,7 @@ function SectionCard({
     <div className="rounded-xl border border-[var(--border)] bg-[var(--background-elevated)]">
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-6 py-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--primary)]/10 text-[var(--primary)]">
+          <div className="flex h-8 w-8 items-center justify-center border-2 border-[var(--border)] bg-[var(--border)] text-[var(--background)]">
             {icon}
           </div>
           <h3 className="text-sm font-semibold text-[var(--foreground)]">{title}</h3>
@@ -235,19 +235,19 @@ export default function EvalPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       {/* Header */}
-      <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
+      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
         <Link
           href="/admin"
-          className="mb-2 inline-block text-sm text-[var(--foreground-muted)] hover:text-[var(--primary)] transition-colors"
+          className="mb-2 inline-block font-body text-sm font-semibold text-[#000000]/60 hover:text-[#000000]"
         >
           ← Admin Panel
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)]">
+            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
               EVALUATION
             </h2>
-            <p className="mt-0.5 text-sm text-[var(--foreground-muted)]">
+            <p className="mt-0.5 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
               Run the RAG evaluation suite against your test questions.
             </p>
           </div>
@@ -255,7 +255,7 @@ export default function EvalPage() {
             type="button"
             onClick={handleRun}
             disabled={isRunning}
-            className="flex items-center gap-2 rounded-md bg-[var(--primary)] px-5 py-2.5 text-sm font-medium text-[var(--background)] hover:bg-[var(--primary-hover)] disabled:opacity-50 transition-colors cursor-pointer"
+            className="flex items-center gap-2 border-2 border-[#000000] bg-[#000000] px-5 py-2.5 font-body text-sm font-bold text-[var(--primary)] hover:bg-[#000000]/80 disabled:opacity-50 transition-colors cursor-pointer"
           >
             {isRunning ? (
               <RefreshCw className="h-4 w-4 animate-spin" />
@@ -273,7 +273,7 @@ export default function EvalPage() {
 
           {/* Status banner */}
           {isRunning && (
-            <div className="flex items-center gap-3 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-4 py-3 text-sm text-[var(--primary)]">
+            <div className="flex items-center gap-3 border-2 border-[var(--border)] bg-[var(--primary)]/20 px-4 py-3 font-body text-sm font-semibold text-[var(--foreground)]">
               <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
               <span>
                 Evaluating test questions…{" "}
@@ -294,7 +294,7 @@ export default function EvalPage() {
           )}
 
           {isDone && (
-            <div className="flex items-center gap-3 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-4 py-3 text-sm text-[var(--primary)]">
+            <div className="flex items-center gap-3 border-2 border-[var(--border)] bg-[var(--primary)]/20 px-4 py-3 font-body text-sm font-semibold text-[var(--foreground)]">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               <span>
                 Evaluation complete —{" "}

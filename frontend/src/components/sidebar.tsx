@@ -24,17 +24,22 @@ export function Sidebar() {
         type="button"
         onClick={() => setMobileOpen(!mobileOpen)}
         aria-label="Toggle sidebar"
-        className="fixed left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--background-elevated)] shadow-[0_0_12px_var(--primary-glow)] lg:hidden cursor-pointer transition-shadow duration-200 hover:shadow-[0_0_18px_var(--primary-glow)]"
+        className="fixed left-4 top-4 z-50 flex h-10 w-10 items-center justify-center border-2 border-[var(--border)] bg-[var(--background-elevated)] lg:hidden cursor-pointer transition-colors duration-200 hover:bg-[var(--primary)]"
+        style={{ boxShadow: "3px 3px 0 var(--border)" }}
       >
-        <Menu className="h-5 w-5" strokeWidth={2} />
+        <Menu className="h-5 w-5" strokeWidth={2.5} />
       </button>
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-screen w-56 flex-col border-r border-[var(--border)] bg-[var(--background-elevated)] transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed left-0 top-0 z-40 flex h-screen w-56 flex-col border-r-2 border-[var(--border)] bg-[var(--background-elevated)] transition-transform duration-200 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
+        style={{ boxShadow: "2px 0 0 var(--border)" }}
       >
-      <div className="flex h-16 items-center gap-2 border-b border-[var(--border)] px-4">
-        <h1 className="font-heading text-xl font-bold tracking-wider text-[var(--primary)] text-glow">
+      <div
+        className="flex h-16 items-center gap-2 border-b-2 border-[var(--border)] px-4 bg-[var(--primary)] header-texture"
+        style={{ boxShadow: "0 3px 0 var(--border)" }}
+      >
+        <h1 className="font-heading text-2xl text-[#000000] tracking-wide uppercase">
           {config.app_name}
         </h1>
       </div>
@@ -46,29 +51,29 @@ export function Sidebar() {
               key={href}
               href={href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-200 cursor-pointer ${
+              className={`flex items-center gap-3 px-3 py-3 font-body text-sm font-bold uppercase tracking-wide transition-colors duration-150 cursor-pointer border-l-4 ${
                 isActive
-                  ? "bg-[var(--primary)]/20 text-[var(--primary)] border-l-2 border-[var(--primary)] shadow-[0_0_8px_var(--primary-glow)]"
-                  : "text-[var(--foreground-muted)] hover:bg-[var(--primary)]/10 hover:text-[var(--foreground)] border-l-2 border-transparent"
+                  ? "bg-[var(--primary)] text-[#000000] border-[var(--border)]"
+                  : "text-[var(--foreground-muted)] border-transparent hover:border-[var(--border)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
               }`}
             >
-              <Icon className="h-5 w-5 shrink-0" strokeWidth={2} />
+              <Icon className="h-5 w-5 shrink-0" strokeWidth={2.5} />
               {label}
             </Link>
           );
         })}
       </nav>
-      <div className="border-t border-[var(--border)] p-3">
+      <div className="border-t-2 border-[var(--border)] p-3">
         <button
           type="button"
           onClick={toggleTheme}
           aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-          className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--foreground-muted)] transition-all duration-200 hover:bg-[var(--primary)]/10 hover:text-[var(--foreground)] cursor-pointer"
+          className="flex w-full items-center gap-3 border-2 border-transparent px-3 py-2.5 font-body text-sm font-semibold uppercase tracking-wide text-[var(--foreground-muted)] transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--background)] hover:text-[var(--foreground)] cursor-pointer"
         >
           {theme === "light" ? (
-            <Moon className="h-5 w-5 shrink-0" strokeWidth={2} />
+            <Moon className="h-5 w-5 shrink-0" strokeWidth={2.5} />
           ) : (
-            <Sun className="h-5 w-5 shrink-0" strokeWidth={2} />
+            <Sun className="h-5 w-5 shrink-0" strokeWidth={2.5} />
           )}
           {theme === "light" ? "Dark mode" : "Light mode"}
         </button>
@@ -81,7 +86,7 @@ export function Sidebar() {
         aria-label="Close sidebar"
         onClick={() => setMobileOpen(false)}
         onKeyDown={(e) => e.key === "Escape" && setMobileOpen(false)}
-        className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+        className="fixed inset-0 z-30 bg-black/60 lg:hidden"
       />
     )}
     </>
