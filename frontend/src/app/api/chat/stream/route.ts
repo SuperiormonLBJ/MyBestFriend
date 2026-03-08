@@ -13,7 +13,8 @@ export async function POST(request: NextRequest) {
     }
 
     const url = `${BACKEND_URL}/api/chat/stream`;
-    console.log(LOG_TAG, "fetching backend", { url: url.replace(/^https?:\/\/[^/]+/, "***"), messageLen: message.length });
+    const fromEnv = !!(process.env.NEXT_PUBLIC_BACKEND_URL ?? process.env.BACKEND_URL);
+    console.log(LOG_TAG, "fetching backend", { fromEnv, url: url.replace(/^https?:\/\/[^/]+/, "***"), messageLen: message.length });
 
     const res = await fetch(url, {
       method: "POST",
