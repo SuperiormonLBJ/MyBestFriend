@@ -206,6 +206,39 @@ def generate_answer(query, history: list[dict] = [], requester_name: str = "", r
     return answer, context_docs, no_info
 
 
+def generate_answer_stream(query: str, history: list[dict] = []):
+    """
+    Stream the answer token by token.
+    Yields dicts: {'token': str} for each chunk, then {'done': True, 'no_info': bool, 'final': str}.
+    """
+    rewritten_query = rewrite_query(query, history)
+    combined_query_rewritten = combine_all_user_questions(rewritten_query, history)
+    combined_question_original = combine_all_user_questions(query, history)
+    context_docs_rewritten = fetch_context(combined_query_rewritten)
+    context_docs_original = fetch_context(combined_question_original)
+    context_docs = context_docs_rewritten + context_docs_original
+
+    context_docs = deduplicate_context(context_docs)
+    reranked_context_docs = rerank_documents(query, context_docs, top_k=TOP_K)
+    context = "\n".join([doc.page_content for doc in reranked_context_docs])
+
+    messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
+    messages.extend(convert_to_messages(history))
+    messages.append(HumanMessage(content=query))
+
+    full_text = ""
+    for chunk in llm.stream(messages):
+        token = chunk.content or ""
+        full_text += token
+        if token:
+            yield {"token": token}
+
+    no_info = "[[NO_INFO]]" in full_text
+    final = full_text.replace("[[NO_INFO]]", "").strip()
+    print(f"Streamed answer with model: {config.get_generator_model()} | no_info={no_info}")
+    yield {"done": True, "no_info": no_info, "final": final}
+
+
 def get_knowledge_tree():
     """
     Return tree structure of ingested documents for admin UI.

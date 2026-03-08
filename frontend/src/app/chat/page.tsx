@@ -6,23 +6,16 @@ import { ChatMessageBubble, type ChatMessage } from "@/components/chat-message";
 import { TypingIndicator } from "@/components/typing-indicator";
 import { useConfig } from "@/components/config-provider";
 
-async function fetchAnswer(message: string, history: { role: string; content: string }[]) {
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
-  });
-  if (!res.ok) throw new Error("Failed to get response");
-  const data = await res.json();
-  return { answer: data.answer as string, no_info: data.no_info as boolean };
-}
+const HISTORY_KEY = "chat_history";
 
 type ContactState = "idle" | "open" | "sending" | "sent" | "error";
 
 export default function ChatPage() {
   const { config } = useConfig();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Contact form state
@@ -31,6 +24,23 @@ export default function ChatPage() {
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactError, setContactError] = useState("");
+
+  // Load history from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(HISTORY_KEY);
+      if (saved) setMessages(JSON.parse(saved));
+    } catch {}
+    setHistoryLoaded(true);
+  }, []);
+
+  // Persist history to localStorage whenever messages change
+  useEffect(() => {
+    if (!historyLoaded) return;
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(messages));
+    } catch {}
+  }, [messages, historyLoaded]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -49,18 +59,57 @@ export default function ChatPage() {
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const { answer, no_info } = await fetchAnswer(content, history);
+      const res = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: content, history }),
+      });
 
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: answer,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      if (!res.ok) throw new Error("Failed to get response");
 
-      if (no_info) {
-        setPendingQuestion(content);
-        setContactState("open");
+      const assistantId = crypto.randomUUID();
+      let accumulated = "";
+      let firstToken = true;
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done: readerDone, value } = await reader.read();
+        if (readerDone) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          if (!part.startsWith("data: ")) continue;
+          const event = JSON.parse(part.slice(6));
+
+          if (event.done) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, content: event.final } : m))
+            );
+            setStreaming(false);
+            if (event.no_info) {
+              setPendingQuestion(content);
+              setContactState("open");
+            }
+          } else if (event.token) {
+            if (firstToken) {
+              firstToken = false;
+              accumulated = event.token;
+              setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: accumulated }]);
+              setLoading(false);
+              setStreaming(true);
+            } else {
+              accumulated += event.token;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
+              );
+            }
+          }
+        }
       }
     } catch {
       const errorMessage: ChatMessage = {
@@ -69,6 +118,7 @@ export default function ChatPage() {
         content: "Sorry, I couldn't connect to the backend. Please make sure the API is running.",
       };
       setMessages((prev) => [...prev, errorMessage]);
+      setStreaming(false);
     } finally {
       setLoading(false);
     }
@@ -199,7 +249,7 @@ export default function ChatPage() {
         <div className="mx-auto max-w-3xl">
           <ChatInput
             onSend={handleSend}
-            disabled={loading}
+            disabled={loading || streaming}
             placeholder={config.input_placeholder}
           />
         </div>

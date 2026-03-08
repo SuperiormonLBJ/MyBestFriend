@@ -7,13 +7,15 @@ import time
 import uuid
 import smtplib
 import os
+import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from rag_retrieval import generate_answer, get_knowledge_tree, reload_vectorstore
+from rag_retrieval import generate_answer, generate_answer_stream, get_knowledge_tree, reload_vectorstore
 from utils.config_loader import ConfigLoader
 from utils.prompts import get_reference_template
 from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get_default_content, sync_defaults
@@ -56,6 +58,19 @@ class ChatResponse(BaseModel):
 def chat(request: ChatRequest):
     answer, _, no_info = generate_answer(request.message, request.history)
     return ChatResponse(answer=answer, no_info=no_info)
+
+
+@app.post("/api/chat/stream")
+def chat_stream(request: ChatRequest):
+    def event_stream():
+        for event in generate_answer_stream(request.message, request.history):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/health")
