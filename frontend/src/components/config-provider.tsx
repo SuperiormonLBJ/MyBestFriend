@@ -24,7 +24,10 @@ export type ModelsConfig = {
   evaluator_model?: string;
 };
 
-export type FullConfig = FrontendConfig & ModelsConfig;
+export type FullConfig = FrontendConfig &
+  ModelsConfig & {
+    recipient_email?: string;
+  };
 
 const defaultConfig: FrontendConfig = {
   app_name: "MyBestFriend",

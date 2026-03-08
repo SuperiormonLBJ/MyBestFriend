@@ -8,7 +8,8 @@ from pydantic import BaseModel
 
 from rag_retrieval import generate_answer, get_knowledge_tree, reload_vectorstore
 from utils.config_loader import ConfigLoader
-from utils.prompts import RESTRUCTURE_TO_MD_PROMPT, get_reference_template
+from utils.prompts import get_reference_template
+from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get_default_content
 from utils.supabase_client import supabase_client
 from document_ops import delete_document, add_document
 from rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
@@ -141,7 +142,7 @@ def api_restructure(request: RestructureRequest):
     importance_val = (request.importance or "medium").strip().lower()
     if importance_val not in ("high", "medium", "low"):
         importance_val = "medium"
-    prompt = RESTRUCTURE_TO_MD_PROMPT.format(
+    prompt = get_prompt("RESTRUCTURE_TO_MD_PROMPT").format(
         reference_md=reference_md,
         raw_text=request.raw_text.strip(),
         user_type=request.doc_type,
@@ -228,3 +229,36 @@ def api_ingest():
         return {"chunks_count": count, "documents_synced": synced, "status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/prompts")
+def api_get_prompts():
+    """List all managed prompts with their current Supabase content."""
+    return {"prompts": get_all_prompts()}
+
+
+class PromptUpdateRequest(BaseModel):
+    content: str
+
+
+@app.put("/api/prompts/{key}")
+def api_update_prompt(key: str, request: PromptUpdateRequest):
+    """Update a prompt by key. Returns the updated prompt and its default for comparison."""
+    if not request.content.strip():
+        raise HTTPException(status_code=400, detail="content cannot be empty")
+    success = update_prompt(key, request.content)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Unknown prompt key: {key}")
+    return {"key": key, "status": "updated"}
+
+
+@app.post("/api/prompts/{key}/reset")
+def api_reset_prompt(key: str):
+    """Reset a prompt to its hardcoded default."""
+    default = get_default_content(key)
+    if not default:
+        raise HTTPException(status_code=404, detail=f"Unknown prompt key: {key}")
+    success = update_prompt(key, default)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to reset prompt")
+    return {"key": key, "status": "reset", "content": default}

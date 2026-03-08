@@ -14,7 +14,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from utils.config_loader import ConfigLoader
-from utils.prompts import LINKEDIN_PROMPT
+from utils.prompt_manager import get_prompt
 
 from langchain_community.document_loaders import PlaywrightURLLoader, PyPDFLoader, UnstructuredHTMLLoader
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -179,7 +179,7 @@ def load_document_url():
         doc.metadata["source"] = parsed.netloc
         if doc.metadata.get("source") == "www.linkedin.com":
             llm = ChatOpenAI(model=MODEL, temperature=0)
-            messages = [SystemMessage(content=LINKEDIN_PROMPT.format(raw_linkedin_text=doc.page_content))]
+            messages = [SystemMessage(content=get_prompt("LINKEDIN_PROMPT").format(raw_linkedin_text=doc.page_content))]
             messages.append(HumanMessage(content=doc.page_content))
             doc.page_content = llm.invoke(messages).content
         doc.metadata["full_url"] = doc.metadata.get("source")

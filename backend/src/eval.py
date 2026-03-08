@@ -13,7 +13,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from utils.base_models import RetrievalLLMEval
 from rag_retrieval import generate_answer
-from utils.prompts import SYSTEM_PROMPT_EVALUATOR_GENERATOR
+from utils.prompt_manager import get_prompt
 from utils.config_loader import ConfigLoader
 from utils.base_models import RetrievalEval
 
@@ -58,7 +58,7 @@ def evaluate_response(test_question: TestQuestion) -> RetrievalLLMEval:
     system_messages = [SystemMessage(
         content=("You are an expert evaluator assessing the quality of answers. Evaluate the generated answer by comparing it to the reference answer. Only give 5/5 scores for perfect answers."
                  ))]
-    user_messages = [HumanMessage(content=SYSTEM_PROMPT_EVALUATOR_GENERATOR.format(question=test_question.question, generated_answer=generated_answer, ground_truth=test_question.ground_truth))]
+    user_messages = [HumanMessage(content=get_prompt("SYSTEM_PROMPT_EVALUATOR_GENERATOR").format(question=test_question.question, generated_answer=generated_answer, ground_truth=test_question.ground_truth))]
     messages = system_messages + user_messages
 
     structured_llm = llm.with_structured_output(RetrievalLLMEval)

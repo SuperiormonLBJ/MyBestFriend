@@ -11,7 +11,7 @@ if str(project_root) not in sys.path:
 
 from utils.base_models import RerankOrder
 from utils.config_loader import ConfigLoader
-from utils.prompts import REWRITE_PROMPT, SYSTEM_PROMPT_GENERATOR, SYSTEM_PROMPT_RERANKER
+from utils.prompt_manager import get_prompt
 from utils.supabase_client import supabase_client
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
 from dotenv import load_dotenv
@@ -83,7 +83,7 @@ def rewrite_query(query: str, history: list = []) -> str:
         {query}
     """
     messages = [
-        {"role": "system", "content": REWRITE_PROMPT},
+        {"role": "system", "content": get_prompt("REWRITE_PROMPT")},
         {"role": "user", "content": user_prompt},
     ]
 
@@ -102,7 +102,7 @@ def rerank_documents(query: str, docs: list, top_k: int = TOP_K):
         user_prompt += f"# CHUNK ID: {index + 1}:\n\n{chunk.page_content}\n\n"
     user_prompt += "Reply only with the list of ranked chunk ids, nothing else."
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_RERANKER},
+        {"role": "system", "content": get_prompt("SYSTEM_PROMPT_RERANKER")},
         {"role": "user", "content": user_prompt},
     ]
     llm_with_structured_output = llm.with_structured_output(RerankOrder)
@@ -148,7 +148,7 @@ def generate_answer(query, history: list[dict] = []):
     context = "\n".join([doc.page_content for doc in reranked_context_docs])
 
     # convert history to langchain format
-    messages = [SystemMessage(content=SYSTEM_PROMPT_GENERATOR.format(context=context))]
+    messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
 
     messages.extend(convert_to_messages(history)) # system message + previous history
     messages.append(HumanMessage(content=query))
