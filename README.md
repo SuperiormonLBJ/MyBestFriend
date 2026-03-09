@@ -141,3 +141,48 @@ More detailed, provider-specific steps (including Railway’s target-port config
 - Frontend is deployed on Vercel with `BACKEND_URL` pointing at the backend.
 - CORS origins include both `http://localhost:3000` for local dev and your production Vercel URL.
 - Running `POST /api/ingest` succeeds and `GET /api/knowledge` returns non-empty documents.
+
+### 2.5 Supabase SQL initialization
+
+Create the core tables in Supabase (SQL editor → New query):
+
+```sql
+-- Vector chunks used by SupabaseVectorStore
+create table if not exists public.document_chunks (
+  id uuid primary key default gen_random_uuid(),
+  content text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  embedding vector(1536)  -- adjust dimension if your embedding model differs
+);
+
+-- Source documents (full markdown content + metadata)
+create table if not exists public.documents (
+  id uuid primary key default gen_random_uuid(),
+  filename text not null,
+  doc_type text not null,
+  content text not null,
+  inserted_at timestamptz not null default now(),
+  unique (filename, doc_type)
+);
+
+-- App configuration key/value store
+create table if not exists public.app_config (
+  key text primary key,
+  value jsonb not null
+);
+
+-- LLM prompts managed from the admin UI
+create table if not exists public.prompts (
+  key text primary key,
+  content text not null,
+  description text not null
+);
+
+-- Latest evaluation result snapshot
+create table if not exists public.eval_results (
+  id integer primary key,
+  status text,
+  finished_at timestamptz,
+  result jsonb
+);
+```
