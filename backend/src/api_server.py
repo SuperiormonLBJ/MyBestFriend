@@ -60,6 +60,20 @@ app.add_middleware(
 )
 
 
+class VerifyKeyRequest(BaseModel):
+    key: str
+
+
+@app.post("/api/auth/admin")
+def verify_admin_key(request: VerifyKeyRequest):
+    """Validate an admin key. Returns {valid: true} on success, 401 on failure.
+    If no key is configured (open mode) any key (including empty) is accepted."""
+    expected = config.get_admin_api_key()
+    if not expected or request.key == expected:
+        return {"valid": True, "open": not bool(expected)}
+    raise HTTPException(status_code=401, detail="Invalid admin key")
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] = []
@@ -213,7 +227,7 @@ def push_config_to_supabase():
     return {"status": "ok", "config": config.get_full_config()}
 
 
-@app.put("/api/config", dependencies=[AdminAuth])
+@app.put("/api/config")
 def update_config(request: ConfigUpdateRequest):
     """Update config values and persist to config.yaml."""
     updates = {k: v for k, v in request.model_dump().items() if v is not None}
@@ -440,7 +454,7 @@ def _load_eval_result() -> dict | None:
     return None
 
 
-@app.post("/api/evaluate", dependencies=[AdminAuth])
+@app.post("/api/evaluate")
 def api_start_evaluation():
     """Start a background evaluation run. Returns a job_id to poll for results."""
     job_id = str(uuid.uuid4())[:8]

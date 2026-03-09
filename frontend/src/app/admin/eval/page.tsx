@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getStoredAdminKey } from "@/lib/session-auth";
 import Link from "next/link";
 import {
   Play,
@@ -10,6 +11,7 @@ import {
   FlaskConical,
   Brain,
   Search,
+  Settings2,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,7 @@ type EvalResult = {
   llm: LLMResult;
   retrieval: RetrievalResult;
   test_count: number;
+  config_snapshot?: Record<string, unknown>;
 };
 
 type JobStatus = "idle" | "running" | "done" | "error";
@@ -213,7 +216,15 @@ export default function EvalPage() {
     setJob({ status: "running", started_at: Date.now() / 1000 });
     setJobId(null);
     try {
-      const res = await fetch("/api/evaluate", { method: "POST" });
+      const res = await fetch("/api/evaluate", {
+        method: "POST",
+        headers: { "X-Admin-Key": getStoredAdminKey() },
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem("mbf_admin_key");
+        window.location.href = "/admin";
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setJobId(data.job_id);
@@ -386,6 +397,28 @@ export default function EvalPage() {
                   max={100}
                   format={(v) => `${v.toFixed(1)}%`}
                 />
+              </div>
+            </SectionCard>
+          )}
+
+          {/* Config snapshot */}
+          {isDone && result?.config_snapshot && (
+            <SectionCard
+              icon={<Settings2 className="h-4 w-4" />}
+              title="Config at time of run"
+            >
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                {(["generator_model", "rewrite_model", "reranker_model",
+                   "hybrid_search_enabled", "self_check_enabled", "multi_step_enabled"] as string[])
+                  .filter((k) => result.config_snapshot![k] !== undefined)
+                  .map((k) => (
+                    <div key={k} className="flex items-center justify-between gap-2">
+                      <span className="text-[var(--foreground-muted)] truncate">{k.replace(/_/g, " ")}</span>
+                      <span className="font-mono font-medium text-[var(--foreground)] truncate">
+                        {String(result.config_snapshot![k])}
+                      </span>
+                    </div>
+                  ))}
               </div>
             </SectionCard>
           )}

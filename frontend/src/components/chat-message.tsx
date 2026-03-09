@@ -1,14 +1,25 @@
 "use client";
 
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 
 export type MessageRole = "user" | "assistant";
+
+export type SourceItem = {
+  source: string;
+  section: string;
+  doc_type: string;
+  year: string;
+  snippet: string;
+};
 
 export type ChatMessage = {
   id: string;
   role: MessageRole;
   content: string;
+  sources?: SourceItem[];
 };
 
 type ChatMessageProps = {
@@ -34,6 +45,65 @@ function BotAvatar() {
       <path d="M16 10V6" stroke="currentColor" strokeWidth="2" strokeLinecap="square"/>
       <circle cx="16" cy="5" r="1.5" fill="currentColor"/>
     </svg>
+  );
+}
+
+function SourcesPanel({ sources }: { sources: SourceItem[] }) {
+  const [open, setOpen] = useState(false);
+  if (!sources.length) return null;
+
+  return (
+    <div className="mt-2 border border-[var(--border)] bg-[var(--background)]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-1.5 font-heading text-[10px] uppercase tracking-widest text-[var(--foreground-muted)] hover:bg-[var(--background-elevated)] transition-colors cursor-pointer"
+        aria-expanded={open}
+      >
+        <FileText className="h-3 w-3 shrink-0" strokeWidth={2.5} />
+        <span>{sources.length} source{sources.length > 1 ? "s" : ""}</span>
+        {open ? (
+          <ChevronUp className="ml-auto h-3 w-3 shrink-0" strokeWidth={2.5} />
+        ) : (
+          <ChevronDown className="ml-auto h-3 w-3 shrink-0" strokeWidth={2.5} />
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-[var(--border)] divide-y divide-[var(--border)]">
+          {sources.map((s, i) => (
+            <div key={i} className="px-3 py-2 space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-heading text-[10px] uppercase tracking-wider text-[var(--foreground)] truncate max-w-[200px]">
+                  {s.source.replace(/\.md$/, "")}
+                </span>
+                {s.section && (
+                  <span className="font-body text-[10px] text-[var(--foreground-muted)] truncate max-w-[160px]">
+                    › {s.section}
+                  </span>
+                )}
+                <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                  {s.doc_type && (
+                    <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-heading text-[9px] uppercase tracking-wider text-[var(--foreground-muted)]">
+                      {s.doc_type}
+                    </span>
+                  )}
+                  {s.year && (
+                    <span className="rounded-sm border border-[var(--border)] px-1.5 py-0.5 font-heading text-[9px] uppercase tracking-wider text-[var(--foreground-muted)]">
+                      {s.year}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {s.snippet && (
+                <p className="font-body text-xs text-[var(--foreground-muted)] leading-relaxed line-clamp-2">
+                  {s.snippet}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -76,6 +146,11 @@ export function ChatMessageBubble({ message }: ChatMessageProps) {
             </div>
           )}
         </div>
+        {!isUser && message.sources && message.sources.length > 0 && (
+          <div className="w-full max-w-full">
+            <SourcesPanel sources={message.sources} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { SquarePen } from "lucide-react";
 import { ChatInput } from "@/components/chat-input";
-import { ChatMessageBubble, type ChatMessage } from "@/components/chat-message";
+import { ChatMessageBubble, type ChatMessage, type SourceItem } from "@/components/chat-message";
 import { TypingIndicator } from "@/components/typing-indicator";
 import { useConfig } from "@/components/config-provider";
 
@@ -11,22 +11,35 @@ const HISTORY_KEY = "chat_history";
 
 type ContactState = "idle" | "open" | "sending" | "sent" | "error";
 
+type KnowledgeScope = {
+  doc_types: Record<string, number>;
+  year_range: string | null;
+};
+
+const QUICK_PROMPTS = [
+  "What is {name}'s current role?",
+  "Tell me about {name}'s projects",
+  "What skills does {name} have?",
+  "What are {name}'s hobbies?",
+  "Summarize {name}'s career",
+  "What did {name} study?",
+];
+
 export default function ChatPage() {
   const { config } = useConfig();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [scope, setScope] = useState<KnowledgeScope | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Contact form state
   const [pendingQuestion, setPendingQuestion] = useState("");
   const [contactState, setContactState] = useState<ContactState>("idle");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactError, setContactError] = useState("");
 
-  // Load history from localStorage on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(HISTORY_KEY);
@@ -35,7 +48,6 @@ export default function ChatPage() {
     setHistoryLoaded(true);
   }, []);
 
-  // Persist history to localStorage whenever messages change
   useEffect(() => {
     if (!historyLoaded) return;
     try {
@@ -47,7 +59,15 @@ export default function ChatPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, contactState]);
 
-  const handleSend = async (content: string) => {
+  // Fetch knowledge scope for onboarding display
+  useEffect(() => {
+    fetch("/api/scope")
+      .then((r) => r.json())
+      .then((d) => setScope(d))
+      .catch(() => {});
+  }, []);
+
+  const handleSend = useCallback(async (content: string) => {
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -75,50 +95,53 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let buffer = "";
 
+      const processEvent = (event: Record<string, unknown>, isFinal: boolean) => {
+        if (event.done) {
+          const text = ((event.final as string) ?? accumulated).trim() || "No response generated.";
+          const sources = (event.sources as SourceItem[]) || [];
+          if (firstToken) {
+            setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: text, sources }]);
+            firstToken = false;
+          } else {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, content: text, sources } : m))
+            );
+          }
+          setStreaming(false);
+          if (event.no_info) {
+            setPendingQuestion(content);
+            setContactState("open");
+          }
+        } else if (event.token) {
+          const token = event.token as string;
+          if (firstToken) {
+            firstToken = false;
+            accumulated = token;
+            setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: accumulated }]);
+            setLoading(false);
+            setStreaming(true);
+          } else {
+            accumulated += token;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
+            );
+          }
+        }
+      };
+
       while (true) {
         const { done: readerDone, value } = await reader.read();
         if (readerDone) {
           if (value) buffer += decoder.decode(value, { stream: false });
           break;
         }
-
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split("\n\n");
         buffer = parts.pop() ?? "";
-
         for (const part of parts) {
           if (!part.startsWith("data: ")) continue;
           try {
-            const event = JSON.parse(part.slice(6));
-            if (event.done) {
-              const text = (event.final ?? accumulated).trim() || "No response generated.";
-              if (firstToken) {
-                setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: text }]);
-                firstToken = false;
-              } else {
-                setMessages((prev) =>
-                  prev.map((m) => (m.id === assistantId ? { ...m, content: text } : m))
-                );
-              }
-              setStreaming(false);
-              if (event.no_info) {
-                setPendingQuestion(content);
-                setContactState("open");
-              }
-            } else if (event.token) {
-              if (firstToken) {
-                firstToken = false;
-                accumulated = event.token;
-                setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: accumulated }]);
-                setLoading(false);
-                setStreaming(true);
-              } else {
-                accumulated += event.token;
-                setMessages((prev) =>
-                  prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
-                );
-              }
-            }
+            processEvent(JSON.parse(part.slice(6)), false);
           } catch (e) {
             console.error("[chat] SSE parse error:", part.slice(0, 80), e);
           }
@@ -129,39 +152,12 @@ export default function ChatPage() {
       for (const part of flushParts) {
         if (!part.startsWith("data: ")) continue;
         try {
-          const event = JSON.parse(part.slice(6));
-          if (event.done) {
-            const text = (event.final ?? accumulated).trim() || "No response generated.";
-            if (firstToken) {
-              setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: text }]);
-              firstToken = false;
-            } else {
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: text } : m))
-              );
-            }
-            setStreaming(false);
-            if (event.no_info) {
-              setPendingQuestion(content);
-              setContactState("open");
-            }
-          } else if (event.token) {
-            if (firstToken) {
-              firstToken = false;
-              accumulated = event.token;
-              setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: accumulated }]);
-              setStreaming(true);
-            } else {
-              accumulated += event.token;
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
-              );
-            }
-          }
+          processEvent(JSON.parse(part.slice(6)), true);
         } catch (e) {
           console.error("[chat] SSE parse error (flush):", part.slice(0, 80), e);
         }
       }
+
       if (firstToken) {
         setMessages((prev) => [
           ...prev,
@@ -169,24 +165,26 @@ export default function ChatPage() {
             id: assistantId,
             role: "assistant",
             content:
-              "No response was received from the server. The request may have timed out (try a shorter question) or the stream may not have reached the browser. If it keeps happening, check Vercel function duration and Railway backend logs.",
+              "No response was received from the server. The request may have timed out (try a shorter question) or the stream may not have reached the browser.",
           },
         ]);
         setStreaming(false);
       }
     } catch (err) {
       console.error("[chat] stream error:", err);
-      const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "Sorry, I couldn't connect to the backend. Please make sure the API is running.",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Sorry, I couldn't connect to the backend. Please make sure the API is running.",
+        },
+      ]);
       setStreaming(false);
     } finally {
       setLoading(false);
     }
-  };
+  }, [messages]);
 
   const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,6 +225,23 @@ export default function ChatPage() {
 
   const ownerName = config.owner_name || "Beiji";
 
+  // Quick prompts with owner name substituted
+  const quickPrompts = QUICK_PROMPTS.slice(0, 4).map((p) => p.replace("{name}", ownerName));
+
+  // Knowledge scope summary for onboarding
+  const docTypeLabels: Record<string, string> = {
+    career: "Career & Work",
+    project: "Projects",
+    personal: "Personal & Hobbies",
+    cv: "CV & Skills",
+    misc: "General",
+  };
+  const scopeTopics = scope
+    ? Object.keys(scope.doc_types)
+        .filter((t) => scope.doc_types[t] > 0)
+        .map((t) => docTypeLabels[t] || t)
+    : null;
+
   return (
     <div className="flex h-full flex-1 flex-col">
       <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture flex items-center justify-between gap-4">
@@ -258,14 +273,49 @@ export default function ChatPage() {
         aria-live="polite"
       >
         {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <div className="border-2 border-[var(--border)] px-8 py-6" style={{ boxShadow: "5px 5px 0 var(--border)" }}>
+          <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
+            <div className="border-2 border-[var(--border)] px-8 py-6 w-full max-w-lg" style={{ boxShadow: "5px 5px 0 var(--border)" }}>
               <p className="font-body text-base font-semibold text-[var(--foreground-muted)] uppercase tracking-wide">
-                Type a question or use the microphone for voice input
+                Ask me anything about {ownerName}
               </p>
-              <p className="mt-2 font-body text-sm text-[var(--foreground-muted)]/70">
-                Try: &ldquo;What is {ownerName}&rsquo;s job experience in Singapore?&rdquo; or &ldquo;Tell me about their hobbies&rdquo;
+              {scopeTopics && scopeTopics.length > 0 && (
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {scopeTopics.map((topic) => (
+                    <span
+                      key={topic}
+                      className="border border-[var(--border)] px-2.5 py-1 font-body text-xs text-[var(--foreground-muted)] uppercase tracking-wider"
+                    >
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {scope?.year_range && (
+                <p className="mt-2 font-body text-xs text-[var(--foreground-muted)]/60">
+                  Knowledge covers {scope.year_range}
+                </p>
+              )}
+            </div>
+
+            {/* Quick prompt chips */}
+            <div className="w-full max-w-lg space-y-2">
+              <p className="font-heading text-[10px] uppercase tracking-widest text-[var(--foreground-muted)]">
+                Try asking
               </p>
+              <div className="grid grid-cols-2 gap-2">
+                {quickPrompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => handleSend(prompt)}
+                    disabled={loading || streaming}
+                    className="border-2 border-[var(--border)] bg-[var(--background-elevated)] px-3 py-2.5 font-body text-sm text-left text-[var(--foreground)] transition-colors duration-150 hover:bg-[var(--primary)] hover:text-[#000000] disabled:opacity-40 cursor-pointer"
+                    style={{ boxShadow: "2px 2px 0 var(--border)" }}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -275,7 +325,6 @@ export default function ChatPage() {
           ))}
           {loading && <TypingIndicator />}
 
-          {/* Contact form — shown when the bot couldn't find the answer */}
           {contactState !== "idle" && (
             <div
               className="border-2 border-[var(--border)] bg-[var(--surface)] p-5"

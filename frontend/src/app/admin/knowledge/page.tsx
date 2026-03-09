@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { getStoredAdminKey } from "@/lib/session-auth";
 import Link from "next/link";
 import {
   ChevronRight,
@@ -431,7 +432,7 @@ export default function KnowledgePage() {
         try {
           const res = await fetch(
             `/api/documents/${encodeURIComponent(source)}?doc_type=${encodeURIComponent(docType)}`,
-            { method: "DELETE" }
+            { method: "DELETE", headers: { "X-Admin-Key": getStoredAdminKey() } }
           );
           const resData = await res.json();
           if (resData.error) throw new Error(resData.error);
@@ -453,7 +454,7 @@ export default function KnowledgePage() {
     try {
       const res = await fetch("/api/restructure", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
         body: JSON.stringify({
           raw_text: addForm.rawText.trim(),
           doc_type: addForm.doc_type,
@@ -482,7 +483,7 @@ export default function KnowledgePage() {
     try {
       const res = await fetch("/api/documents", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
         body: JSON.stringify({
           filename: addForm.filename,
           doc_type: addForm.doc_type,
@@ -514,7 +515,7 @@ export default function KnowledgePage() {
         setIngesting(true);
         setMessage(null);
         try {
-          const res = await fetch("/api/ingest", { method: "POST" });
+          const res = await fetch("/api/ingest", { method: "POST", headers: { "X-Admin-Key": getStoredAdminKey() } });
           const resData = await res.json();
           if (!res.ok) throw new Error(resData.error || resData.detail || `HTTP ${res.status}`);
           setMessage({

@@ -22,9 +22,20 @@ export type ModelsConfig = {
   evaluator_model?: string;
 };
 
+export type RetrievalConfig = {
+  hybrid_search_enabled?: boolean;
+  lexical_weight?: number;
+  metadata_filter_enabled?: boolean;
+  self_check_enabled?: boolean;
+  multi_step_enabled?: boolean;
+  use_graph?: boolean;
+};
+
 export type FullConfig = FrontendConfig &
-  ModelsConfig & {
+  ModelsConfig &
+  RetrievalConfig & {
     recipient_email?: string;
+    admin_api_key?: string;
   };
 
 const defaultConfig: FrontendConfig = {

@@ -1,16 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { BACKEND_URL } from "@/lib/backend";
+import { adminHeaders } from "@/lib/admin";
 
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ key: string }> }
 ) {
+  const adminKey = request.headers.get("X-Admin-Key") ?? "";
   try {
     const { key } = await params;
     const body = await request.json();
     const res = await fetch(`${BACKEND_URL}/api/prompts/${key}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: adminHeaders(adminKey, { "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -28,13 +30,15 @@ export async function PUT(
 }
 
 export async function POST(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ key: string }> }
 ) {
+  const adminKey = request.headers.get("X-Admin-Key") ?? "";
   try {
     const { key } = await params;
     const res = await fetch(`${BACKEND_URL}/api/prompts/${key}/reset`, {
       method: "POST",
+      headers: adminHeaders(adminKey),
     });
     if (!res.ok) {
       const err = await res.text();

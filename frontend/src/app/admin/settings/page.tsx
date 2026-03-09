@@ -10,9 +10,12 @@ import {
   Palette,
   Bell,
   Cpu,
+  Search,
+  Shield,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { getStoredAdminKey } from "@/lib/session-auth";
 
 const EMBEDDING_MODELS = [
   "text-embedding-3-large",
@@ -40,6 +43,13 @@ const EMPTY_FORM: FullConfig = {
   reranker_model: "",
   evaluator_model: "",
   recipient_email: "",
+  hybrid_search_enabled: true,
+  lexical_weight: 0.3,
+  metadata_filter_enabled: true,
+  self_check_enabled: false,
+  multi_step_enabled: false,
+  use_graph: false,
+  admin_api_key: "",
 };
 
 function Field({
@@ -118,11 +128,14 @@ export default function SettingsPage() {
     setMessage(null);
     try {
       const payload = Object.fromEntries(
-        Object.entries(form).filter(([, v]) => v != null && v !== "")
+        Object.entries(form).filter(([k, v]) => {
+          if (k === "admin_api_key") return v != null;
+          return v != null && v !== "";
+        })
       ) as Record<string, string>;
       const res = await fetch("/api/config", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -363,6 +376,117 @@ export default function SettingsPage() {
                 </Field>
               </div>
             </div>
+          </SectionCard>
+
+          {/* Section 4 — Retrieval */}
+          <SectionCard
+            icon={<Search className="h-4 w-4" />}
+            title="Retrieval"
+            description="Fine-tune hybrid search, metadata boosting, self-check, and multi-step reasoning."
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-[var(--foreground)]">Hybrid search</p>
+                  <p className="text-xs text-[var(--foreground-muted)]">Combine vector similarity with keyword (ILIKE) search</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, hybrid_search_enabled: !p.hybrid_search_enabled }))}
+                  className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.hybrid_search_enabled ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                  aria-label="Toggle hybrid search"
+                >
+                  <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.hybrid_search_enabled ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {form.hybrid_search_enabled && (
+                <Field label="Lexical weight" hint="0.0 = vector only · 1.0 = keyword only. Default: 0.3">
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    value={form.lexical_weight ?? 0.3}
+                    onChange={(e) => setForm((p) => ({ ...p, lexical_weight: parseFloat(e.target.value) || 0.3 }))}
+                    className={inputCls}
+                  />
+                </Field>
+              )}
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-[var(--foreground)]">Metadata filter boost</p>
+                  <p className="text-xs text-[var(--foreground-muted)]">Softly boost results matching detected year or doc_type</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, metadata_filter_enabled: !p.metadata_filter_enabled }))}
+                  className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.metadata_filter_enabled ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                  aria-label="Toggle metadata filter"
+                >
+                  <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.metadata_filter_enabled ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-[var(--foreground)]">Answer self-check</p>
+                  <p className="text-xs text-[var(--foreground-muted)]">Verify all claims are grounded in retrieved context (adds latency)</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, self_check_enabled: !p.self_check_enabled }))}
+                  className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.self_check_enabled ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                  aria-label="Toggle self-check"
+                >
+                  <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.self_check_enabled ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-[var(--foreground)]">Multi-step retrieval</p>
+                  <p className="text-xs text-[var(--foreground-muted)]">Run follow-up queries for complex questions (adds latency)</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, multi_step_enabled: !p.multi_step_enabled }))}
+                  className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.multi_step_enabled ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                  aria-label="Toggle multi-step"
+                >
+                  <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.multi_step_enabled ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-[var(--foreground)]">LangGraph orchestrator</p>
+                  <p className="text-xs text-[var(--foreground-muted)]">Route non-streaming /api/chat through the graph controller</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, use_graph: !p.use_graph }))}
+                  className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.use_graph ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                  aria-label="Toggle LangGraph"
+                >
+                  <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.use_graph ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Section 5 — Security */}
+          <SectionCard
+            icon={<Shield className="h-4 w-4" />}
+            title="Security"
+            description="Protect admin endpoints with an API key. Leave empty to disable (local dev)."
+          >
+            <Field label="Admin API key" hint="Set the X-Admin-Key header to this value in admin requests. Leave blank to allow all.">
+              <input
+                type="password"
+                value={form.admin_api_key ?? ""}
+                onChange={(e) => set("admin_api_key", e.target.value)}
+                placeholder="Leave blank to disable auth"
+                className={inputCls}
+                autoComplete="new-password"
+              />
+            </Field>
           </SectionCard>
 
           {/* Save */}

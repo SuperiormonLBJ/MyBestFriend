@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { BACKEND_URL } from "@/lib/backend";
+import { adminHeaders } from "@/lib/admin";
 
 export async function DELETE(
   request: NextRequest,
@@ -13,7 +14,8 @@ export async function DELETE(
     const url = new URL(`${BACKEND_URL}/api/documents/${encodeURIComponent(decoded)}`);
     if (docType) url.searchParams.set("doc_type", docType);
 
-    const res = await fetch(url.toString(), { method: "DELETE" });
+    const key = request.headers.get("X-Admin-Key") ?? "";
+    const res = await fetch(url.toString(), { method: "DELETE", headers: adminHeaders(key) });
     const data = await res.json();
     if (!res.ok) {
       return NextResponse.json(data, { status: res.status });

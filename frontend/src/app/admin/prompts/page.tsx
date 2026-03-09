@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { getStoredAdminKey } from "@/lib/session-auth";
 
 type Prompt = {
   key: string;
@@ -93,7 +94,7 @@ export default function PromptsPage() {
     try {
       const res = await fetch(`/api/prompts/${key}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
         body: JSON.stringify({ content: draft }),
       });
       if (!res.ok) {
@@ -117,7 +118,7 @@ export default function PromptsPage() {
       [key]: { ...prev[key], resetting: true, message: null },
     }));
     try {
-      const res = await fetch(`/api/prompts/${key}`, { method: "POST" });
+      const res = await fetch(`/api/prompts/${key}`, { method: "POST", headers: { "X-Admin-Key": getStoredAdminKey() } });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || `HTTP ${res.status}`);
