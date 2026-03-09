@@ -10,7 +10,7 @@ import os
 import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -32,6 +32,22 @@ from eval import load_test_questions, evaluate_LLM, evaluate_all
 config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
 
+
+# ---------------------------------------------------------------------------
+# Admin auth dependency
+# ---------------------------------------------------------------------------
+
+def require_admin(x_admin_key: str = Header(default="")):
+    """Validate the X-Admin-Key header for protected admin endpoints.
+    If ADMIN_API_KEY is empty (default), auth is disabled for easy local dev.
+    """
+    expected = config.get_admin_api_key()
+    if expected and x_admin_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing admin API key")
+
+
+AdminAuth = Depends(require_admin)
+
 # Sync all hardcoded prompt defaults to Supabase on startup so code changes take effect immediately.
 sync_defaults()
 
@@ -52,12 +68,17 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     no_info: bool = False
+    sources: list = []
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    answer, _, no_info = generate_answer(request.message, request.history)
-    return ChatResponse(answer=answer, no_info=no_info)
+    if config.get_use_graph():
+        from conversation_graph import run_graph
+        answer, _, no_info, sources = run_graph(request.message, request.history)
+    else:
+        answer, _, no_info, sources = generate_answer(request.message, request.history)
+    return ChatResponse(answer=answer, no_info=no_info, sources=sources)
 
 
 @app.post("/api/chat/stream")
@@ -71,6 +92,16 @@ def chat_stream(request: ChatRequest):
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+@app.get("/api/scope")
+def api_scope():
+    """Return knowledge scope (doc_type counts, year range) for onboarding UI."""
+    try:
+        from twin_tools import get_knowledge_scope
+        return get_knowledge_scope()
+    except Exception as e:
+        return {"doc_types": {}, "year_range": None, "error": str(e)}
 
 
 @app.get("/health")
@@ -164,9 +195,17 @@ class ConfigUpdateRequest(BaseModel):
     reranker_model: str | None = None
     evaluator_model: str | None = None
     recipient_email: str | None = None
+    # Retrieval flags
+    hybrid_search_enabled: bool | None = None
+    lexical_weight: float | None = None
+    metadata_filter_enabled: bool | None = None
+    self_check_enabled: bool | None = None
+    multi_step_enabled: bool | None = None
+    use_graph: bool | None = None
+    admin_api_key: str | None = None
 
 
-@app.post("/api/config/push")
+@app.post("/api/config/push", dependencies=[AdminAuth])
 def push_config_to_supabase():
     """Force-push the current in-memory config to Supabase (use once after creating the table)."""
     config.reload()
@@ -174,7 +213,7 @@ def push_config_to_supabase():
     return {"status": "ok", "config": config.get_full_config()}
 
 
-@app.put("/api/config")
+@app.put("/api/config", dependencies=[AdminAuth])
 def update_config(request: ConfigUpdateRequest):
     """Update config values and persist to config.yaml."""
     updates = {k: v for k, v in request.model_dump().items() if v is not None}
@@ -229,7 +268,7 @@ def _inject_frontmatter_override(
     return "\n".join(lines) + "\n\n" + body
 
 
-@app.post("/api/restructure")
+@app.post("/api/restructure", dependencies=[AdminAuth])
 def api_restructure(request: RestructureRequest):
     """Restructure raw text into RAG-ready markdown using the reference format for the doc_type. Does not ingest."""
     if not request.raw_text.strip():
@@ -268,7 +307,7 @@ def api_restructure(request: RestructureRequest):
     return {"restructured_md": restructured}
 
 
-@app.post("/api/documents")
+@app.post("/api/documents", dependencies=[AdminAuth])
 def api_add_document(request: AddDocumentRequest):
     """Add a new document by markdown content."""
     if not request.content.strip():
@@ -283,13 +322,13 @@ def api_add_document(request: AddDocumentRequest):
     return result
 
 
-@app.delete("/api/documents/{source}")
+@app.delete("/api/documents/{source}", dependencies=[AdminAuth])
 def api_delete_document(source: str, doc_type: str | None = None):
     """Delete a document and its chunks by source filename."""
     return delete_document(source=source, doc_type=doc_type)
 
 
-@app.post("/api/ingest")
+@app.post("/api/ingest", dependencies=[AdminAuth])
 def api_ingest():
     """Re-ingest all documents from the data directory and rebuild the vector store."""
     try:
@@ -338,7 +377,7 @@ class PromptUpdateRequest(BaseModel):
     content: str
 
 
-@app.put("/api/prompts/{key}")
+@app.put("/api/prompts/{key}", dependencies=[AdminAuth])
 def api_update_prompt(key: str, request: PromptUpdateRequest):
     """Update a prompt by key. Returns the updated prompt and its default for comparison."""
     if not request.content.strip():
@@ -349,7 +388,7 @@ def api_update_prompt(key: str, request: PromptUpdateRequest):
     return {"key": key, "status": "updated"}
 
 
-@app.post("/api/prompts/{key}/reset")
+@app.post("/api/prompts/{key}/reset", dependencies=[AdminAuth])
 def api_reset_prompt(key: str):
     """Reset a prompt to its hardcoded default."""
     default = get_default_content(key)
@@ -401,11 +440,13 @@ def _load_eval_result() -> dict | None:
     return None
 
 
-@app.post("/api/evaluate")
+@app.post("/api/evaluate", dependencies=[AdminAuth])
 def api_start_evaluation():
     """Start a background evaluation run. Returns a job_id to poll for results."""
     job_id = str(uuid.uuid4())[:8]
     _eval_jobs[job_id] = {"status": "running", "started_at": time.time(), "result": None, "error": None}
+
+    config_snapshot = config.get_full_config()
 
     def run():
         try:
@@ -416,6 +457,7 @@ def api_start_evaluation():
                 "llm": llm_result.model_dump(),
                 "retrieval": retrieval_result.model_dump(),
                 "test_count": len(tests),
+                "config_snapshot": config_snapshot,
             }
             _eval_jobs[job_id].update({
                 "status": "done",
