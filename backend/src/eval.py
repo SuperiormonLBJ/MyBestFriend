@@ -7,7 +7,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 from utils.base_models import TestQuestion
 import tqdm
-from rag_retrieval import fetch_context, generate_answer
+from src.rag_retrieval import fetch_context, generate_answer
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from utils.base_models import RetrievalLLMEval
@@ -24,7 +24,7 @@ from ragas.metrics import (
     context_recall,
     context_precision,
 )
-from rag_ingestion import embeddings
+from src.rag_ingestion import embeddings
 
 
 config = ConfigLoader()
@@ -49,7 +49,7 @@ def evaluate_response(test_question: TestQuestion) -> RetrievalLLMEval:
     Evaluate the LLM-Response based on the retrieval results, not on the retrieval results based on the question
     """
     # get the context
-    generated_answer, retrieval_results = generate_answer(test_question.question)
+    generated_answer, retrieval_results, _, _ = generate_answer(test_question.question)
 
     # parse the messages
     system_messages = [SystemMessage(
@@ -151,9 +151,8 @@ if __name__ == "__main__":
     contexts = []
     answers = []
     for test in tests:
-        test_answer, test_context = generate_answer(test.question)
+        test_answer, test_context, _, _ = generate_answer(test.question)
         answers.append(test_answer)
-        # each query have multiple context documents
         contexts.append([doc.page_content for doc in test_context])
 
     dataset = Dataset.from_dict({

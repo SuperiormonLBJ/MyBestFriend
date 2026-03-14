@@ -155,6 +155,34 @@ class ConfigLoader:
     def get_recipient_email(self) -> str:
         return self.config.get('RECIPIENT_EMAIL', '')
 
+    def get_hybrid_search_enabled(self) -> bool:
+        return bool(self.config.get('HYBRID_SEARCH_ENABLED', True))
+
+    def get_lexical_weight(self) -> float:
+        return float(self.config.get('LEXICAL_WEIGHT', 0.3))
+
+    def get_metadata_filter_enabled(self) -> bool:
+        return bool(self.config.get('METADATA_FILTER_ENABLED', True))
+
+    def get_self_check_enabled(self) -> bool:
+        return bool(self.config.get('SELF_CHECK_ENABLED', False))
+
+    def get_multi_step_enabled(self) -> bool:
+        return bool(self.config.get('MULTI_STEP_ENABLED', False))
+
+    def get_use_graph(self) -> bool:
+        return bool(self.config.get('USE_GRAPH', False))
+
+    def get_admin_api_key(self) -> str:
+        return str(self.config.get('ADMIN_API_KEY', ''))
+
+    def get_owner_id(self) -> str:
+        """
+        Logical owner identifier — used as a namespace for multi-tenant deployments.
+        Defaults to 'default' so single-owner setups require no changes.
+        """
+        return str(self.config.get('OWNER_ID', 'default'))
+
     def get_frontend_config(self) -> dict:
         """Return frontend-facing config (safe to expose via API)."""
         default = {
@@ -174,11 +202,22 @@ class ConfigLoader:
             "evaluator_model": self.config.get("EVALUATOR_MODEL", "gpt-4o-mini"),
         }
 
+    def get_retrieval_config(self) -> dict:
+        return {
+            "hybrid_search_enabled": self.get_hybrid_search_enabled(),
+            "lexical_weight": self.get_lexical_weight(),
+            "metadata_filter_enabled": self.get_metadata_filter_enabled(),
+            "self_check_enabled": self.get_self_check_enabled(),
+            "multi_step_enabled": self.get_multi_step_enabled(),
+            "use_graph": self.get_use_graph(),
+        }
+
     def get_full_config(self) -> dict:
         """Return full editable config (frontend + models) for settings UI."""
         return {
             **self.get_frontend_config(),
             **self.get_models_config(),
+            **self.get_retrieval_config(),
             "recipient_email": self.get_recipient_email(),
         }
 
@@ -201,6 +240,15 @@ class ConfigLoader:
             "reranker_model": "RERANKER_MODEL",
             "evaluator_model": "EVALUATOR_MODEL",
         }
+        retrieval_key_map = {
+            "hybrid_search_enabled": "HYBRID_SEARCH_ENABLED",
+            "lexical_weight": "LEXICAL_WEIGHT",
+            "metadata_filter_enabled": "METADATA_FILTER_ENABLED",
+            "self_check_enabled": "SELF_CHECK_ENABLED",
+            "multi_step_enabled": "MULTI_STEP_ENABLED",
+            "use_graph": "USE_GRAPH",
+            "admin_api_key": "ADMIN_API_KEY",
+        }
 
         frontend_updates: dict = {}
         for k, v in updates.items():
@@ -210,6 +258,8 @@ class ConfigLoader:
                 frontend_updates[k] = v
             elif k in model_key_map:
                 self.config[model_key_map[k]] = v
+            elif k in retrieval_key_map:
+                self.config[retrieval_key_map[k]] = v
             elif k == "recipient_email":
                 self.config["RECIPIENT_EMAIL"] = v
 

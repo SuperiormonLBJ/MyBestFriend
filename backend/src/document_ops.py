@@ -8,12 +8,14 @@ from pathlib import Path
 
 from langchain_core.documents import Document
 
-from rag_retrieval import vectorstore
-from rag_ingestion import (
+from src.rag_retrieval import vectorstore
+from src.rag_ingestion import (
     DATA_DIR,
     _parse_md_frontmatter,
     create_chunks_markdown,
 )
+from utils.config_loader import ConfigLoader as _ConfigLoader
+_doc_ops_config = _ConfigLoader()
 
 # Add project root so utils/ is importable when running from src/
 _project_root = Path(__file__).parent.parent
@@ -143,6 +145,7 @@ def add_document(content: str, filename: str, doc_type: str) -> dict:
             metadata["doc_type"] = frontmatter_meta["type"]
         metadata = _sanitize_metadata(metadata)
         metadata["title"] = filename.split(".")[0]
+        metadata["owner_id"] = _doc_ops_config.get_owner_id()
         print(f"[document_ops] metadata for new document: {metadata}")
 
         # Use full content if body is empty (e.g. doc with only frontmatter)

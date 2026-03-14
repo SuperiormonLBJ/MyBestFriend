@@ -116,6 +116,9 @@ def load_document_md() -> str:
         if raw_source:
             doc.metadata["source"] = os.path.basename(raw_source)
 
+        # owner_id for multi-tenant namespacing
+        doc.metadata["owner_id"] = config.get_owner_id()
+
         documents.append(doc)  # Has to be Document object !!!
 
     print(f"loaded {len(documents)} md documents")
@@ -124,10 +127,46 @@ def load_document_md() -> str:
 def load_document():
     return load_document_md()
 
-def create_chunks_markdown(documents):
-    # markdown splitter
+MAX_WORDS_PER_CHUNK = 400  # ~800 tokens; split sections larger than this by paragraphs
 
-    # Two-level split: ## and ### — matches NUS-Master-Project (e.g. Pipeline A/B, Challenges subsections)
+
+def _split_by_paragraphs(text: str, metadata: dict, max_words: int = MAX_WORDS_PER_CHUNK) -> list:
+    """
+    Split a long text block into paragraph-level sub-chunks, each under max_words.
+    Preserves all metadata fields. Returns at least one Document.
+    """
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return [Document(page_content=text, metadata=metadata)]
+
+    chunks: list = []
+    current_parts: list = []
+    current_words = 0
+
+    for para in paragraphs:
+        words = len(para.split())
+        if current_words + words > max_words and current_parts:
+            chunks.append(Document(
+                page_content="\n\n".join(current_parts),
+                metadata=dict(metadata),
+            ))
+            current_parts = [para]
+            current_words = words
+        else:
+            current_parts.append(para)
+            current_words += words
+
+    if current_parts:
+        chunks.append(Document(
+            page_content="\n\n".join(current_parts),
+            metadata=dict(metadata),
+        ))
+
+    return chunks if chunks else [Document(page_content=text, metadata=metadata)]
+
+
+def create_chunks_markdown(documents):
+    # Two-level split: ## and ### headers
     markdown_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[
             ("##", "section"),
@@ -137,20 +176,22 @@ def create_chunks_markdown(documents):
 
     chunked_docs = []
     for doc in documents:
-        # Split the markdown body into section chunks
         section_chunks = markdown_splitter.split_text(doc.page_content)
         for c in section_chunks:
-            # Carry over original metadata, plus any header info (`section`)
             new_meta = dict(doc.metadata)
-            # c.metadata may contain {"section": "1. Overview"} etc.
             section_title = c.metadata.get("section")
             project_title = doc.metadata.get("title")
             if section_title:
                 c.page_content = f"project title: {project_title}\n\nsection: {section_title}\n\n{c.page_content}"
             new_meta.update(c.metadata)
-            chunked_docs.append(
-                Document(page_content=c.page_content, metadata=new_meta)
-            )
+
+            # Sub-split large sections by paragraphs to keep chunks manageable
+            word_count = len(c.page_content.split())
+            if word_count > MAX_WORDS_PER_CHUNK:
+                sub_chunks = _split_by_paragraphs(c.page_content, new_meta, MAX_WORDS_PER_CHUNK)
+                chunked_docs.extend(sub_chunks)
+            else:
+                chunked_docs.append(Document(page_content=c.page_content, metadata=new_meta))
 
     return chunked_docs
 

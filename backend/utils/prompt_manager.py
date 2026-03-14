@@ -23,6 +23,8 @@ from utils.prompts import (
     RESTRUCTURE_TO_MD_PROMPT,
     LINKEDIN_PROMPT,
     SYSTEM_PROMPT_EVALUATOR_GENERATOR,
+    SELF_CHECK_PROMPT,
+    MULTI_STEP_PROMPT,
 )
 
 # Registry of all managed prompts: key → {content, description}
@@ -50,6 +52,14 @@ _DEFAULTS: dict[str, dict] = {
     "SYSTEM_PROMPT_EVALUATOR_GENERATOR": {
         "content": SYSTEM_PROMPT_EVALUATOR_GENERATOR,
         "description": "Evaluates RAG answer quality. Placeholders: {question}, {generated_answer}, {ground_truth}.",
+    },
+    "SELF_CHECK_PROMPT": {
+        "content": SELF_CHECK_PROMPT,
+        "description": "Post-generation factual grounding check. Verifies all answer claims are supported by context. Placeholders: {context}, {answer}.",
+    },
+    "MULTI_STEP_PROMPT": {
+        "content": MULTI_STEP_PROMPT,
+        "description": "Generates follow-up retrieval queries for complex multi-step questions. Placeholders: {query}, {initial_context}.",
     },
 }
 

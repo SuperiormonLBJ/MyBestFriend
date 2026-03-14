@@ -1,5 +1,5 @@
 import gradio as gr
-from rag_retrieval import generate_answer
+from src.rag_retrieval import generate_answer
 
 def format_context(context):
     result = "<h2 style='color: #ff7800;'>Relevant Context</h2>\n\n"

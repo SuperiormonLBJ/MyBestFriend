@@ -15,19 +15,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from rag_retrieval import generate_answer, generate_answer_stream, get_knowledge_tree, reload_vectorstore
+from .rag_retrieval import generate_answer, generate_answer_stream, get_knowledge_tree, reload_vectorstore
 from utils.config_loader import ConfigLoader
 from utils.prompts import get_reference_template
 from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get_default_content, sync_defaults
 from utils.supabase_client import supabase_client
-from document_ops import delete_document, add_document
-from rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
+from .document_ops import delete_document, add_document
+from .rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
 from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 import traceback as _traceback
 # Pre-import eval in the main thread so its module-level code (ConfigLoader, ChatOpenAI init)
 # runs here, never inside a background thread where the shared Supabase client is not safe.
-from eval import load_test_questions, evaluate_LLM, evaluate_all
+from .eval import load_test_questions, evaluate_LLM, evaluate_all
 
 config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
@@ -88,7 +88,7 @@ class ChatResponse(BaseModel):
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     if config.get_use_graph():
-        from conversation_graph import run_graph
+        from src.conversation_graph import run_graph
         answer, _, no_info, sources = run_graph(request.message, request.history)
     else:
         answer, _, no_info, sources = generate_answer(request.message, request.history)
@@ -112,7 +112,7 @@ def chat_stream(request: ChatRequest):
 def api_scope():
     """Return knowledge scope (doc_type counts, year range) for onboarding UI."""
     try:
-        from twin_tools import get_knowledge_scope
+        from src.twin_tools import get_knowledge_scope
         return get_knowledge_scope()
     except Exception as e:
         return {"doc_types": {}, "year_range": None, "error": str(e)}
@@ -346,7 +346,7 @@ def api_delete_document(source: str, doc_type: str | None = None):
 def api_ingest():
     """Re-ingest all documents from the data directory and rebuild the vector store."""
     try:
-        from rag_ingestion import DATA_DIR
+        from src.rag_ingestion import DATA_DIR
         from pathlib import Path
 
         documents = load_document()

@@ -1,13 +1,16 @@
+import re
+import time
+import json
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
+from langchain_core.documents import Document
 
 import os
 import sys
 import threading
 from pathlib import Path
 
-# Add project root to path so we can import from utils
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
@@ -29,21 +32,17 @@ llm_rewrite = ChatOpenAI(model=config.get_rewrite_model())
 llm_reranker = ChatOpenAI(model=config.get_reranker_model())
 TOP_K = config.get_top_k()
 
-# Module-level vectorstore (used by the main thread and reload_vectorstore).
 vectorstore = SupabaseVectorStore(
     client=supabase_client,
     embedding=embeddings,
     table_name="document_chunks",
     query_name="match_documents",
 )
-# Thread-local vectorstore so background threads (e.g. eval) get their own
-# httpx connection and don't corrupt the main thread's Supabase client.
 _tl = threading.local()
-_vs_version = 0  # incremented on reload so threads rebuild their local copy
+_vs_version = 0
 
 
 def _get_tl_vectorstore() -> SupabaseVectorStore:
-    """Return a per-thread SupabaseVectorStore, rebuilding it when the main vectorstore has been reloaded."""
     if getattr(_tl, "vs_version", -1) != _vs_version:
         from supabase import create_client
         _c = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SECRET_KEY"])
@@ -58,28 +57,164 @@ def _get_tl_vectorstore() -> SupabaseVectorStore:
 
 
 def reload_vectorstore(new_vectorstore):
-    """Replace the global vectorstore after re-ingestion."""
     global vectorstore, _vs_version
     vectorstore = new_vectorstore
-    _vs_version += 1  # signal all threads to rebuild their local copy
+    _vs_version += 1
 
+
+def _supabase_similarity_search(client, query_embedding: list, k: int) -> list:
+    """
+    Call match_documents RPC directly using .limit(k) instead of .params.
+    Bypasses LangChain SupabaseVectorStore which breaks with supabase-py 2.23+.
+    """
+    params = {"query_embedding": query_embedding}
+    res = client.rpc("match_documents", params).limit(k).execute()
+    return [
+        Document(metadata=row.get("metadata", {}), page_content=row.get("content", ""))
+        for row in (res.data or [])
+        if row.get("content")
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Lexical search helpers
+# ---------------------------------------------------------------------------
+
+def lexical_search(query: str, max_results: int = 8) -> list:
+    """
+    Keyword-based ILIKE search against document_chunks.content.
+    Filters stop-words and short tokens, searches top keywords independently,
+    returns deduplicated Document objects.
+    """
+    stop_words = {"what", "when", "where", "which", "who", "how", "the", "and",
+                  "for", "that", "this", "with", "from", "about", "have", "does"}
+    raw_tokens = re.sub(r'[^\w\s]', '', query.lower()).split()
+    keywords = [t for t in raw_tokens if len(t) > 3 and t not in stop_words]
+    if not keywords:
+        return []
+
+    seen: set = set()
+    results: list = []
+    for kw in keywords[:5]:
+        try:
+            resp = (
+                supabase_client.table("document_chunks")
+                .select("content, metadata")
+                .ilike("content", f"%{kw}%")
+                .limit(max_results)
+                .execute()
+            )
+            for row in (resp.data or []):
+                content = row.get("content", "")
+                meta = row.get("metadata") or {}
+                key = content[:80]
+                if key not in seen:
+                    seen.add(key)
+                    results.append(Document(page_content=content, metadata=meta))
+        except Exception as e:
+            print(f"[lexical_search] warning for keyword '{kw}': {e}")
+
+    return results
+
+
+def merge_hybrid(vector_docs: list, lexical_docs: list, lexical_weight: float = 0.3) -> list:
+    """
+    Combine vector and lexical results via reciprocal rank fusion-style scoring.
+    Documents appearing in both lists get a score boost.
+    """
+    scores: dict = {}
+    doc_map: dict = {}
+
+    for rank, doc in enumerate(vector_docs):
+        key = doc.page_content[:80]
+        score = (1.0 - lexical_weight) * (1.0 / (rank + 1))
+        scores[key] = scores.get(key, 0.0) + score
+        doc_map[key] = doc
+
+    for rank, doc in enumerate(lexical_docs):
+        key = doc.page_content[:80]
+        score = lexical_weight * (1.0 / (rank + 1))
+        scores[key] = scores.get(key, 0.0) + score
+        doc_map.setdefault(key, doc)
+
+    sorted_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)
+    return [doc_map[k] for k in sorted_keys]
+
+
+# ---------------------------------------------------------------------------
+# Query intent extraction
+# ---------------------------------------------------------------------------
+
+def extract_query_intent(query: str) -> dict:
+    """
+    Extract year and doc_type hints via lightweight regex + keyword patterns.
+    Used for soft metadata boosting — never hard-filters results.
+    """
+    intent: dict = {"year": None, "doc_type": None}
+
+    year_match = re.search(r'\b(20\d{2})\b', query)
+    if year_match:
+        intent["year"] = year_match.group(1)
+
+    q = query.lower()
+    if any(w in q for w in ["work", "job", "career", "company", "role", "position",
+                              "intern", "employed", "employer", "hire", "hired"]):
+        intent["doc_type"] = "career"
+    elif any(w in q for w in ["project", "built", "developed", "created", "app",
+                               "system", "tool", "software", "codebase"]):
+        intent["doc_type"] = "project"
+    elif any(w in q for w in ["hobby", "hobbies", "sport", "personal", "interest",
+                               "outside work", "free time", "passion", "travel"]):
+        intent["doc_type"] = "personal"
+    elif any(w in q for w in ["resume", "cv", "skill", "education", "degree",
+                               "university", "school", "study", "studied"]):
+        intent["doc_type"] = "cv"
+
+    return intent
+
+
+def _apply_metadata_boost(docs: list, intent: dict) -> list:
+    """
+    Re-order docs by soft-boosting those whose metadata matches the extracted intent.
+    Documents without a match keep their original relative order.
+    """
+    if not intent["doc_type"] and not intent["year"]:
+        return docs
+
+    boosted = []
+    for doc in docs:
+        meta = doc.metadata
+        boost = 0
+        if intent["doc_type"] and meta.get("doc_type") == intent["doc_type"]:
+            boost += 2
+        if intent["year"] and str(meta.get("year", "")) == intent["year"]:
+            boost += 1
+        boosted.append((doc, boost))
+
+    boosted.sort(key=lambda x: x[1], reverse=True)
+    return [doc for doc, _ in boosted]
+
+
+# ---------------------------------------------------------------------------
+# Core retrieval
+# ---------------------------------------------------------------------------
 
 def fetch_context(query: str) -> list:
     """
-    Fetch context via two paths and combine:
-    - Similarity search: top-K most similar chunks
-    - MMR (Maximal Marginal Relevance): top-K diverse chunks from a larger candidate pool
-    Uses a thread-local vectorstore to avoid httpx thread-safety issues.
+    Fetch context via:
+    1. Standard similarity search (top-K)
+    2. MMR for diversity
+    3. Lexical ILIKE search (if HYBRID_SEARCH_ENABLED)
+    Then applies metadata soft-boost (if METADATA_FILTER_ENABLED).
     """
     vs = _get_tl_vectorstore()
+    client = vs._client
     query_embedding = embeddings.embed_query(query)
 
-    # Path 1: standard similarity
-    context_similarity = vs.similarity_search_by_vector(query_embedding, k=TOP_K)
+    context_similarity = _supabase_similarity_search(client, query_embedding, TOP_K)
 
-    # Path 2: MMR — fetch a larger candidate pool, then re-rank client-side for diversity
     fetch_k = TOP_K * 3
-    candidates = vs.similarity_search_by_vector(query_embedding, k=fetch_k)
+    candidates = _supabase_similarity_search(client, query_embedding, fetch_k)
     if candidates:
         candidate_embeddings = embeddings.embed_documents([d.page_content for d in candidates])
         mmr_indices = maximal_marginal_relevance(
@@ -92,20 +227,31 @@ def fetch_context(query: str) -> list:
     else:
         context_mmr = []
 
-    return context_similarity + context_mmr
+    vector_docs = context_similarity + context_mmr
+
+    if config.get_hybrid_search_enabled():
+        lexical_docs = lexical_search(query)
+        combined = merge_hybrid(vector_docs, lexical_docs, config.get_lexical_weight())
+    else:
+        combined = vector_docs
+
+    if config.get_metadata_filter_enabled():
+        intent = extract_query_intent(query)
+        combined = _apply_metadata_boost(combined, intent)
+
+    return combined
+
 
 def deduplicate_context(context: list) -> list:
-    """
-    Deduplicate the context by creating a unique key from page_content and source metadata
-    """
-    seen = {}
-    deduplicated=[]
+    seen: dict = {}
+    deduped: list = []
     for doc in context:
-        key = (doc.page_content, doc.metadata.get("source", ""))
+        key = (doc.page_content[:80], doc.metadata.get("source", ""))
         if key not in seen:
             seen[key] = True
-            deduplicated.append(doc)
-    return deduplicated
+            deduped.append(doc)
+    return deduped
+
 
 def rewrite_query(query: str, history: list = []) -> str:
     user_prompt = f"""
@@ -119,18 +265,18 @@ def rewrite_query(query: str, history: list = []) -> str:
         {"role": "system", "content": get_prompt("REWRITE_PROMPT")},
         {"role": "user", "content": user_prompt},
     ]
-
     rewritten_query = llm_rewrite.invoke(messages)
     print(f"Rewritten query: {rewritten_query.content}")
     return rewritten_query.content
 
+
 def rerank_documents(query: str, docs: list, top_k: int = TOP_K):
-    """
-    Rerank retrieved documents by relevance to the query using the LLM.
-    Asks the LLM to return indices of the top_k most relevant passages (1-based).
-    """
-    user_prompt = f"The user has asked the following question:\n\n{query}\n\nOrder all the chunks of text by relevance to the question, from most relevant to least relevant. Include all the chunk ids you are provided with, reranked.\n\n"
-    user_prompt += "Here are the chunks:\n\n"
+    user_prompt = (
+        f"The user has asked the following question:\n\n{query}\n\n"
+        "Order all the chunks of text by relevance to the question, from most relevant to least relevant. "
+        "Include all the chunk ids you are provided with, reranked.\n\n"
+        "Here are the chunks:\n\n"
+    )
     for index, chunk in enumerate(docs):
         user_prompt += f"# CHUNK ID: {index + 1}:\n\n{chunk.page_content}\n\n"
     user_prompt += "Reply only with the list of ranked chunk ids, nothing else."
@@ -140,73 +286,197 @@ def rerank_documents(query: str, docs: list, top_k: int = TOP_K):
     ]
     llm_with_structured_output = llm_reranker.with_structured_output(RerankOrder)
     rerank_order = llm_with_structured_output.invoke(messages)
-    reranked_docs = [docs[i-1] for i in rerank_order.order]
-
+    reranked_docs = [docs[i - 1] for i in rerank_order.order]
     print(f"Reranked order: {rerank_order.order}")
-
     return reranked_docs[:top_k]
 
+
 def combine_all_user_questions(question: str, history: list) -> str:
-    """
-    Combine all user questions into a single question 
-    to solve the issue that user ask "what did she do before"
-    """
     prior = "\n".join(msg["content"] for msg in history if msg.get("role") == "user")
-    
-    # Handle empty prior case
-    if prior:
-        return prior + "\n" + question
-    else:
-        return question
+    return (prior + "\n" + question) if prior else question
 
 
-def generate_answer(query, history: list[dict] = [], requester_name: str = "", requester_email: str = ""):
+# ---------------------------------------------------------------------------
+# Source extraction
+# ---------------------------------------------------------------------------
+
+def _extract_sources(docs: list) -> list:
+    """Return a deduplicated list of source metadata dicts for citation display."""
+    seen: set = set()
+    sources: list = []
+    for doc in docs:
+        meta = doc.metadata
+        source = meta.get("source", "")
+        section = meta.get("section") or meta.get("subsection") or ""
+        key = (source, section)
+        if key not in seen:
+            seen.add(key)
+            sources.append({
+                "source": source,
+                "section": section,
+                "doc_type": meta.get("doc_type", ""),
+                "year": str(meta.get("year", "")),
+                "snippet": (doc.page_content or "")[:160].strip(),
+            })
+    return sources[:5]
+
+
+# ---------------------------------------------------------------------------
+# Self-check
+# ---------------------------------------------------------------------------
+
+def _self_check_answer(answer: str, context: str) -> dict:
+    """
+    Run a lightweight factual grounding check.
+    Returns {supported: bool, severity: 'low'|'high', raw: str}.
+    """
+    llm_checker = ChatOpenAI(model=config.get_rewrite_model(), temperature=0)
+    prompt = get_prompt("SELF_CHECK_PROMPT").format(context=context[:3000], answer=answer)
+    try:
+        response = llm_checker.invoke([SystemMessage(content=prompt)])
+        raw = (response.content or "").strip()
+        supported = raw.upper().startswith("YES")
+        severity = "high" if "UNSUPPORTED" in raw.upper() and len(raw) > 60 else "low"
+        return {"supported": supported, "severity": severity, "raw": raw}
+    except Exception as e:
+        print(f"[self_check] warning: {e}")
+        return {"supported": True, "severity": "low", "raw": ""}
+
+
+# ---------------------------------------------------------------------------
+# Multi-step / complex-query helpers
+# ---------------------------------------------------------------------------
+
+_COMPLEX_KEYWORDS = [
+    "compare", "timeline", "pros and cons", "list all", "summarize all",
+    "history of", "how did", "what changed", "difference between",
+    "progression", "over the years", "evolution",
+]
+
+
+def _is_complex_query(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _COMPLEX_KEYWORDS)
+
+
+def _generate_followup_queries(query: str, initial_context: str) -> list:
+    """Ask the LLM to suggest up to 2 follow-up retrieval queries."""
+    llm_cheap = ChatOpenAI(model=config.get_rewrite_model(), temperature=0)
+    prompt = get_prompt("MULTI_STEP_PROMPT").format(
+        query=query,
+        initial_context=initial_context[:2000],
+    )
+    try:
+        response = llm_cheap.invoke([SystemMessage(content=prompt)])
+        raw = (response.content or "").strip()
+        if raw.upper() == "SUFFICIENT":
+            return []
+        queries = [q.strip() for q in raw.split("\n") if q.strip() and q.strip().upper() != "SUFFICIENT"]
+        return queries[:2]
+    except Exception as e:
+        print(f"[multi_step] warning: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Structured retrieval logging
+# ---------------------------------------------------------------------------
+
+def _log_retrieval(question: str, chosen_chunks: list, no_info: bool, latency_ms: float) -> None:
+    log = {
+        "event": "retrieval",
+        "question": question[:200],
+        "no_info": no_info,
+        "latency_ms": round(latency_ms, 1),
+        "chunks": [
+            {
+                "source": c.metadata.get("source", ""),
+                "section": c.metadata.get("section", ""),
+                "doc_type": c.metadata.get("doc_type", ""),
+            }
+            for c in chosen_chunks
+        ],
+    }
+    print(json.dumps(log))
+
+
+# ---------------------------------------------------------------------------
+# Answer generation
+# ---------------------------------------------------------------------------
+
+def generate_answer(query, history: list = [], requester_name: str = "", requester_email: str = ""):
     """
     Generate the answer for the query.
-    Returns (answer: str, context_docs: list, no_info: bool).
-    no_info=True when the LLM signals the context is insufficient via [[NO_INFO]].
+    Returns (answer: str, context_docs: list, no_info: bool, sources: list[dict]).
     """
+    t0 = time.time()
     rewritten_query = rewrite_query(query, history)
-    combined_query_rewritten = combine_all_user_questions(rewritten_query, history)
-    combined_question_original = combine_all_user_questions(query, history)
-    context_docs_rewritten = fetch_context(combined_query_rewritten)
-    context_docs_original = fetch_context(combined_question_original)
-    context_docs = context_docs_rewritten + context_docs_original
+    combined_rewritten = combine_all_user_questions(rewritten_query, history)
+    combined_original = combine_all_user_questions(query, history)
+    context_docs = deduplicate_context(fetch_context(combined_rewritten) + fetch_context(combined_original))
+    reranked = rerank_documents(query, context_docs, top_k=TOP_K)
+    context = "\n".join([doc.page_content for doc in reranked])
 
-    context_docs = deduplicate_context(context_docs)
-    reranked_context_docs = rerank_documents(query, context_docs, top_k=TOP_K)
-    context = "\n".join([doc.page_content for doc in reranked_context_docs])
+    # Multi-step: expand context for complex queries
+    if config.get_multi_step_enabled() and _is_complex_query(query):
+        followups = _generate_followup_queries(query, context)
+        if followups:
+            extra_docs = []
+            for fq in followups:
+                extra_docs.extend(fetch_context(fq))
+            all_docs = deduplicate_context(reranked + extra_docs)
+            reranked = rerank_documents(query, all_docs, top_k=TOP_K)
+            context = "\n".join([doc.page_content for doc in reranked])
+            print(f"[multi_step] expanded with {len(followups)} followup queries")
 
     messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
     messages.extend(convert_to_messages(history))
     messages.append(HumanMessage(content=query))
 
     response = llm.invoke(messages)
-
     raw = response.content or ""
     no_info = "[[NO_INFO]]" in raw
     answer = raw.replace("[[NO_INFO]]", "").strip()
 
+    # Self-check: verify claims are grounded in context
+    if config.get_self_check_enabled() and not no_info and answer:
+        check = _self_check_answer(answer, context)
+        if not check["supported"] and check["severity"] == "high":
+            print(f"[self_check] HIGH severity unsupported claims detected — marking no_info")
+            no_info = True
+
+    sources = _extract_sources(reranked)
+    latency_ms = (time.time() - t0) * 1000
+    _log_retrieval(query, reranked, no_info, latency_ms)
     print(f"Generated answer with model: {config.get_generator_model()} | no_info={no_info}")
 
-    return answer, context_docs, no_info
+    return answer, context_docs, no_info, sources
 
 
-def generate_answer_stream(query: str, history: list[dict] = []):
+def generate_answer_stream(query: str, history: list = []):
     """
     Stream the answer token by token.
-    Yields dicts: {'token': str} for each chunk, then {'done': True, 'no_info': bool, 'final': str}.
+    Yields dicts: {'token': str} for each chunk, then {'done': True, 'no_info': bool, 'final': str, 'sources': list}.
     """
+    t0 = time.time()
     rewritten_query = rewrite_query(query, history)
-    combined_query_rewritten = combine_all_user_questions(rewritten_query, history)
-    combined_question_original = combine_all_user_questions(query, history)
-    context_docs_rewritten = fetch_context(combined_query_rewritten)
-    context_docs_original = fetch_context(combined_question_original)
-    context_docs = context_docs_rewritten + context_docs_original
+    combined_rewritten = combine_all_user_questions(rewritten_query, history)
+    combined_original = combine_all_user_questions(query, history)
+    context_docs = deduplicate_context(fetch_context(combined_rewritten) + fetch_context(combined_original))
+    reranked = rerank_documents(query, context_docs, top_k=TOP_K)
+    context = "\n".join([doc.page_content for doc in reranked])
 
-    context_docs = deduplicate_context(context_docs)
-    reranked_context_docs = rerank_documents(query, context_docs, top_k=TOP_K)
-    context = "\n".join([doc.page_content for doc in reranked_context_docs])
+    # Multi-step expansion (runs before streaming begins)
+    if config.get_multi_step_enabled() and _is_complex_query(query):
+        followups = _generate_followup_queries(query, context)
+        if followups:
+            extra_docs = []
+            for fq in followups:
+                extra_docs.extend(fetch_context(fq))
+            all_docs = deduplicate_context(reranked + extra_docs)
+            reranked = rerank_documents(query, all_docs, top_k=TOP_K)
+            context = "\n".join([doc.page_content for doc in reranked])
+            print(f"[multi_step/stream] expanded with {len(followups)} followup queries")
 
     messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
     messages.extend(convert_to_messages(history))
@@ -221,19 +491,26 @@ def generate_answer_stream(query: str, history: list[dict] = []):
 
     no_info = "[[NO_INFO]]" in full_text
     final = full_text.replace("[[NO_INFO]]", "").strip()
+
+    # Self-check on accumulated answer
+    if config.get_self_check_enabled() and not no_info and final:
+        check = _self_check_answer(final, context)
+        if not check["supported"] and check["severity"] == "high":
+            print(f"[self_check/stream] HIGH severity — marking no_info")
+            no_info = True
+
+    sources = _extract_sources(reranked)
+    latency_ms = (time.time() - t0) * 1000
+    _log_retrieval(query, reranked, no_info, latency_ms)
     print(f"Streamed answer with model: {config.get_generator_model()} | no_info={no_info}")
-    yield {"done": True, "no_info": no_info, "final": final}
+    yield {"done": True, "no_info": no_info, "final": final, "sources": sources}
 
 
 def get_knowledge_tree():
-    """
-    Return tree structure of ingested documents for admin UI.
-    Tree: doc_type (folder) -> source (document) -> chunks with previews.
-    """
     result = supabase_client.table("document_chunks").select("content, metadata").execute()
     rows = result.data or []
 
-    structure = {}
+    structure: dict = {}
     for row in rows:
         meta = row.get("metadata") or {}
         content = row.get("content", "")

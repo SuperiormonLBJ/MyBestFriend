@@ -404,6 +404,39 @@ def get_reference_template(doc_type: str) -> str:
 
 
 # Instruction for restructuring raw text into RAG-ready markdown (structure varies by doc type)
+SELF_CHECK_PROMPT = """You are a factual accuracy checker for a RAG (Retrieval-Augmented Generation) system.
+
+Your task: determine if the draft answer below is fully supported by the provided context.
+
+Context:
+{context}
+
+Draft answer:
+{answer}
+
+Instructions:
+- For each claim in the draft answer, check if it is explicitly or clearly implied by the context.
+- If ALL claims are supported: respond with exactly: YES
+- If any claim is NOT supported: respond with: UNSUPPORTED: [brief comma-separated list of the specific unsupported claims]
+- Be strict but fair. Do NOT add commentary beyond the required format."""
+
+MULTI_STEP_PROMPT = """You are a search query planner for a personal knowledge base RAG system.
+
+The user asked: {query}
+
+Here is the initial context retrieved so far:
+{initial_context}
+
+The answer may be incomplete. Generate up to 2 targeted follow-up search queries to retrieve additional relevant information that was NOT covered in the initial context.
+
+Rules:
+- Queries must be short and specific (under 12 words each)
+- Do NOT repeat the original query verbatim
+- One query per line
+- If the initial context already seems sufficient to fully answer the question, reply with exactly: SUFFICIENT
+
+Respond only with the follow-up queries (one per line) or SUFFICIENT."""
+
 RESTRUCTURE_TO_MD_PROMPT = """You are a document structuring assistant. You will receive raw, unstructured text and must restructure it into a clean markdown document for a RAG knowledge base.
 
 **Document type for this task:** {user_type}
