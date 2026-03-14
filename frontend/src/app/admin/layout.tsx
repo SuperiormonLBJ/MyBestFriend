@@ -56,16 +56,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="relative min-h-screen w-full" style={{ backgroundColor: CHAT_BG }}>
-      <div className="pointer-events-none absolute inset-0 flex w-full h-full justify-center items-center">
-        <EtherealShadow
-          color={ETHEREAL_DEFAULT_COLOR}
-          animation={ETHEREAL_ANIMATION}
-          noise={ETHEREAL_NOISE}
-          sizing="fill"
-        />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div
+        className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+        style={{ backgroundColor: CHAT_BG }}
+      >
+        <div className="relative min-h-full w-full">
+          <div className="pointer-events-none absolute inset-0 flex w-full min-h-full justify-center items-stretch">
+            <EtherealShadow
+              color={ETHEREAL_DEFAULT_COLOR}
+              animation={ETHEREAL_ANIMATION}
+              noise={ETHEREAL_NOISE}
+              sizing="fill"
+            />
+          </div>
+          <div className="relative z-10">{children}</div>
+        </div>
       </div>
-      <div className="relative z-10">{children}</div>
     </div>
   );
 }

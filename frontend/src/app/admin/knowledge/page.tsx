@@ -536,7 +536,7 @@ export default function KnowledgePage() {
   };
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {busyPhase && <ProcessingOverlay phase={busyPhase} />}
       <ConfirmModal
         open={confirmDialog !== null}
@@ -582,7 +582,7 @@ export default function KnowledgePage() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {message && (
             <div

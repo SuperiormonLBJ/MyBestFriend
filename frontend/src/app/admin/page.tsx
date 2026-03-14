@@ -6,17 +6,21 @@ import { SpotlightCard } from "@/components/ui/spotlight-card";
 
 export default function AdminPage() {
   return (
-    <div className="flex min-h-full flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
-        <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
-          ADMIN PANEL
-        </h2>
-        <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
-          Manage knowledge base and configuration
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
+              ADMIN PANEL
+            </h2>
+            <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
+              Manage knowledge base and configuration
+            </p>
+          </div>
+        </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 py-8">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-8">
         <div className="mx-auto flex max-w-2xl flex-col gap-6">
           <Link href="/admin/knowledge" className="block">
             <SpotlightCard className="p-8 flex flex-col gap-5 cursor-pointer">

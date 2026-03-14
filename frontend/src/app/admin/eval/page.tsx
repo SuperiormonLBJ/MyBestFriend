@@ -218,7 +218,7 @@ export default function EvalPage() {
   const result = job.result;
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <AdminPageHeader
         title="EVALUATION"
         subtitle="Run the RAG evaluation suite against your test questions."
@@ -240,7 +240,7 @@ export default function EvalPage() {
       />
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-8">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-8">
         <div className="mx-auto max-w-2xl space-y-6">
 
           {/* Status banner */}
