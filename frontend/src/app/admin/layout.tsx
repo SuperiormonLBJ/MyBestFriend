@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import AdminLoginModal from "@/components/admin-login";
+import { EtherealShadow } from "@/components/ui/ethereal-shadow";
+import { CHAT_BG, ETHEREAL_DEFAULT_COLOR, ETHEREAL_ANIMATION, ETHEREAL_NOISE } from "@/lib/constants";
 import { ADMIN_SESSION_KEY, storeAdminKey } from "@/lib/session-auth";
 
 type AuthStatus = "loading" | "authenticated" | "needs_key";
@@ -53,5 +55,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  return <>{children}</>;
+  return (
+    <div className="relative min-h-screen w-full" style={{ backgroundColor: CHAT_BG }}>
+      <div className="pointer-events-none absolute inset-0 flex w-full h-full justify-center items-center">
+        <EtherealShadow
+          color={ETHEREAL_DEFAULT_COLOR}
+          animation={ETHEREAL_ANIMATION}
+          noise={ETHEREAL_NOISE}
+          sizing="fill"
+        />
+      </div>
+      <div className="relative z-10">{children}</div>
+    </div>
+  );
 }

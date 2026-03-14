@@ -2,8 +2,11 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { SquarePen } from "lucide-react";
-import { ChatInput } from "@/components/chat-input";
+import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { ChatMessageBubble, type ChatMessage, type SourceItem } from "@/components/chat-message";
+import { Typewriter } from "@/components/ui/typewriter";
+import { EtherealShadow } from "@/components/ui/ethereal-shadow";
+import { CHAT_BG, ETHEREAL_DEFAULT_COLOR, ETHEREAL_ANIMATION, ETHEREAL_NOISE } from "@/lib/constants";
 import { TypingIndicator } from "@/components/typing-indicator";
 import { useConfig } from "@/components/config-provider";
 
@@ -95,7 +98,7 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      const processEvent = (event: Record<string, unknown>, isFinal: boolean) => {
+      const processEvent = (event: Record<string, unknown>, _isFinal: boolean) => {
         if (event.done) {
           const text = ((event.final as string) ?? accumulated).trim() || "No response generated.";
           const sources = (event.sources as SourceItem[]) || [];
@@ -243,39 +246,62 @@ export default function ChatPage() {
     : null;
 
   return (
-    <div className="flex h-full flex-1 flex-col">
-      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture flex items-center justify-between gap-4">
-        <div>
-          <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide glitch-title">
-            DIGITAL TWIN
-          </h2>
-          <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest blinking-cursor">
-            Ask anything about <span className="underline">{ownerName}</span> — career, projects, hobbies, or daily life
-          </p>
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide glitch-title">
+              DIGITAL TWIN
+            </h2>
+            <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
+              Ask anything about <span className="underline">{ownerName}</span> —{" "}
+              <Typewriter
+                text={["career", "projects", "hobbies", "daily life"]}
+                speed={70}
+                waitTime={1500}
+                deleteSpeed={40}
+                showCursor={false}
+                className="text-[#000000]/90"
+              />
+            </p>
+          </div>
+          <div className="flex shrink-0">
+            <button
+              type="button"
+              onClick={handleNewChat}
+              aria-label="New chat"
+              title="New chat"
+              className="flex items-center gap-2 border-2 border-[#000000] px-3 py-2 font-heading text-sm uppercase tracking-wide text-[#000000] transition-colors duration-150 hover:bg-[#000000] hover:text-[var(--primary)] cursor-pointer"
+              style={{ boxShadow: "3px 3px 0 0 rgba(0,0,0,0.35)" }}
+            >
+              <SquarePen className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+              New Chat
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={handleNewChat}
-          aria-label="New chat"
-          title="New chat"
-          className="flex shrink-0 items-center gap-2 border-2 border-[#000000] px-3 py-2 font-heading text-sm uppercase tracking-wide text-[#000000] transition-colors duration-150 hover:bg-[#000000] hover:text-[var(--primary)] cursor-pointer"
-          style={{ boxShadow: "3px 3px 0 rgba(0,0,0,0.35)" }}
-        >
-          <SquarePen className="h-4 w-4 shrink-0" strokeWidth={2.5} />
-          New Chat
-        </button>
       </header>
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-6 py-4"
+        className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4"
+        style={{ backgroundColor: CHAT_BG }}
         role="log"
         aria-live="polite"
       >
+        <div className="relative min-h-full w-full">
+          <div className="pointer-events-none absolute inset-0 flex w-full h-full justify-center items-center">
+            <EtherealShadow
+              color={ETHEREAL_DEFAULT_COLOR}
+              animation={ETHEREAL_ANIMATION}
+              noise={ETHEREAL_NOISE}
+              sizing="fill"
+            />
+          </div>
+          <div className="relative z-10">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
-            <div className="border-2 border-[var(--border)] px-8 py-6 w-full max-w-lg" style={{ boxShadow: "5px 5px 0 var(--border)" }}>
-              <p className="font-body text-base font-semibold text-[var(--foreground-muted)] uppercase tracking-wide">
+            <div className="border-2 border-[#3f3f46] bg-[#1f1f24] px-8 py-6 w-full max-w-lg shadow-lg" style={{ boxShadow: "5px 5px 0 0 #3f3f46" }}>
+              <p className="font-body text-base font-semibold text-[#e4e4e7] uppercase tracking-wide">
                 Ask me anything about {ownerName}
               </p>
               {scopeTopics && scopeTopics.length > 0 && (
@@ -283,7 +309,7 @@ export default function ChatPage() {
                   {scopeTopics.map((topic) => (
                     <span
                       key={topic}
-                      className="border border-[var(--border)] px-2.5 py-1 font-body text-xs text-[var(--foreground-muted)] uppercase tracking-wider"
+                      className="border border-[#52525b] bg-[#27272a] px-2.5 py-1 font-body text-xs text-[#d4d4d8] uppercase tracking-wider"
                     >
                       {topic}
                     </span>
@@ -291,7 +317,7 @@ export default function ChatPage() {
                 </div>
               )}
               {scope?.year_range && (
-                <p className="mt-2 font-body text-xs text-[var(--foreground-muted)]/60">
+                <p className="mt-2 font-body text-xs text-[#a1a1aa]">
                   Knowledge covers {scope.year_range}
                 </p>
               )}
@@ -299,7 +325,7 @@ export default function ChatPage() {
 
             {/* Quick prompt chips */}
             <div className="w-full max-w-lg space-y-2">
-              <p className="font-heading text-[10px] uppercase tracking-widest text-[var(--foreground-muted)]">
+              <p className="font-heading text-[10px] uppercase tracking-widest text-[#a1a1aa]">
                 Try asking
               </p>
               <div className="grid grid-cols-2 gap-2">
@@ -309,8 +335,8 @@ export default function ChatPage() {
                     type="button"
                     onClick={() => handleSend(prompt)}
                     disabled={loading || streaming}
-                    className="border-2 border-[var(--border)] bg-[var(--background-elevated)] px-3 py-2.5 font-body text-sm text-left text-[var(--foreground)] transition-colors duration-150 hover:bg-[var(--primary)] hover:text-[#000000] disabled:opacity-40 cursor-pointer"
-                    style={{ boxShadow: "2px 2px 0 var(--border)" }}
+                    className="border-2 border-[#3f3f46] bg-[#27272a] px-3 py-2.5 font-body text-sm text-left text-[#e4e4e7] transition-colors duration-150 hover:bg-[#00E6D8] hover:text-[#0a0a0a] hover:border-[#00E6D8] disabled:opacity-40 cursor-pointer"
+                    style={{ boxShadow: "2px 2px 0 0 #3f3f46" }}
                   >
                     {prompt}
                   </button>
@@ -328,7 +354,7 @@ export default function ChatPage() {
           {contactState !== "idle" && (
             <div
               className="border-2 border-[var(--border)] bg-[var(--surface)] p-5"
-              style={{ boxShadow: "5px 5px 0 var(--border)" }}
+              style={{ boxShadow: "5px 5px 0 0 var(--border)" }}
             >
               {contactState === "sent" ? (
                 <p className="font-body text-sm font-semibold text-[var(--foreground)] uppercase tracking-wide">
@@ -386,13 +412,15 @@ export default function ChatPage() {
             </div>
           )}
         </div>
+        </div>
+        </div>
       </div>
 
       <div className="shrink-0 border-t-2 border-[var(--border)] bg-[var(--background)] p-4">
         <div className="mx-auto max-w-3xl">
-          <ChatInput
-            onSend={handleSend}
-            disabled={loading || streaming}
+          <PromptInputBox
+            onSend={(message) => handleSend(message)}
+            isLoading={loading || streaming}
             placeholder={`Ask anything about ${ownerName}…`}
           />
         </div>

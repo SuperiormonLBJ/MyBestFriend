@@ -10,7 +10,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { AdminPageHeader } from "@/components/admin-page-header";
 import { getStoredAdminKey } from "@/lib/session-auth";
 
 type Prompt = {
@@ -147,23 +147,10 @@ export default function PromptsPage() {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      {/* Header */}
-      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
-        <Link
-          href="/admin"
-          className="mb-2 inline-block font-body text-sm font-semibold text-[#000000]/60 hover:text-[#000000]"
-        >
-          ← Admin Panel
-        </Link>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
-              PROMPTS
-            </h2>
-            <p className="mt-0.5 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
-              Edit LLM system prompts. Changes are saved to Supabase and take effect immediately.
-            </p>
-          </div>
+      <AdminPageHeader
+        title="PROMPTS"
+        subtitle="Edit LLM system prompts. Changes are saved to Supabase and take effect immediately."
+        actions={
           <button
             type="button"
             onClick={loadPrompts}
@@ -173,8 +160,8 @@ export default function PromptsPage() {
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
-        </div>
-      </header>
+        }
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-8">
@@ -205,7 +192,7 @@ export default function PromptsPage() {
                     className="w-full flex items-center justify-between gap-4 px-6 py-4 text-left hover:bg-[var(--primary)]/5 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <code className="shrink-0 border border-[var(--border)] bg-[var(--border)] px-2 py-0.5 text-xs font-mono text-[var(--background)]">
+                      <code className="shrink-0 border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-xs font-mono text-[var(--foreground)]">
                         {p.key}
                       </code>
                       <div className="min-w-0">
@@ -224,9 +211,9 @@ export default function PromptsPage() {
                         </span>
                       )}
                       {s.expanded ? (
-                        <ChevronUp className="h-4 w-4 text-[var(--foreground-muted)]" />
+                        <ChevronUp className="h-4 w-4 text-neutral-400" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-[var(--foreground-muted)]" />
+                        <ChevronDown className="h-4 w-4 text-neutral-400" />
                       )}
                     </div>
                   </button>
@@ -244,9 +231,9 @@ export default function PromptsPage() {
                           }`}
                         >
                           {s.message.type === "success" ? (
-                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                           ) : (
-                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />
                           )}
                           {s.message.text}
                         </div>

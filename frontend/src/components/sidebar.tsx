@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageCircle, Settings, Moon, Sun, Menu } from "lucide-react";
-import { useTheme } from "./theme-provider";
-import { useConfig } from "./config-provider";
+import { MessageCircle, Settings, Menu } from "lucide-react";
+import { useConfig } from "@/components/config-provider";
 import { useState } from "react";
 
 const navItems = [
@@ -14,7 +13,6 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { theme, toggleTheme } = useTheme();
   const { config } = useConfig();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -63,21 +61,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="border-t-2 border-[var(--border)] p-3">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-          className="flex w-full items-center gap-3 border-2 border-transparent px-3 py-2.5 font-body text-sm font-semibold uppercase tracking-wide text-[var(--foreground-muted)] transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--background)] hover:text-[var(--foreground)] cursor-pointer"
-        >
-          {theme === "light" ? (
-            <Moon className="h-5 w-5 shrink-0" strokeWidth={2.5} />
-          ) : (
-            <Sun className="h-5 w-5 shrink-0" strokeWidth={2.5} />
-          )}
-          {theme === "light" ? "Dark mode" : "Light mode"}
-        </button>
-      </div>
     </aside>
     {mobileOpen && (
       <div

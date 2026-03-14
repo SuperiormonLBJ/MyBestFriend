@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getStoredAdminKey } from "@/lib/session-auth";
-import Link from "next/link";
+import { getStoredAdminKey, ADMIN_SESSION_KEY } from "@/lib/session-auth";
+import { AdminPageHeader } from "@/components/admin-page-header";
+import { SectionCard } from "@/components/ui/section-card";
 import {
   Play,
   RefreshCw,
@@ -132,33 +133,6 @@ function ScoreBadge({ value, max }: { value: number; max: number }) {
   );
 }
 
-function SectionCard({
-  icon,
-  title,
-  badge,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  badge?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--background-elevated)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-6 py-4">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center border-2 border-[var(--border)] bg-[var(--border)] text-[var(--background)]">
-            {icon}
-          </div>
-          <h3 className="text-sm font-semibold text-[var(--foreground)]">{title}</h3>
-        </div>
-        {badge}
-      </div>
-      <div className="p-6">{children}</div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -221,7 +195,7 @@ export default function EvalPage() {
         headers: { "X-Admin-Key": getStoredAdminKey() },
       });
       if (res.status === 401) {
-        sessionStorage.removeItem("mbf_admin_key");
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
         window.location.href = "/admin";
         return;
       }
@@ -245,23 +219,10 @@ export default function EvalPage() {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      {/* Header */}
-      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
-        <Link
-          href="/admin"
-          className="mb-2 inline-block font-body text-sm font-semibold text-[#000000]/60 hover:text-[#000000]"
-        >
-          ← Admin Panel
-        </Link>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
-              EVALUATION
-            </h2>
-            <p className="mt-0.5 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
-              Run the RAG evaluation suite against your test questions.
-            </p>
-          </div>
+      <AdminPageHeader
+        title="EVALUATION"
+        subtitle="Run the RAG evaluation suite against your test questions."
+        actions={
           <button
             type="button"
             onClick={handleRun}
@@ -275,8 +236,8 @@ export default function EvalPage() {
             )}
             {isRunning ? "Running…" : "Run Evaluation"}
           </button>
-        </div>
-      </header>
+        }
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-8">
@@ -285,7 +246,7 @@ export default function EvalPage() {
           {/* Status banner */}
           {isRunning && (
             <div className="flex items-center gap-3 border-2 border-[var(--border)] bg-[var(--primary)]/20 px-4 py-3 font-body text-sm font-semibold text-[var(--foreground)]">
-              <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
+              <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-teal-500" />
               <span>
                 Evaluating test questions…{" "}
                 {job.started_at && (
@@ -299,14 +260,14 @@ export default function EvalPage() {
 
           {isError && (
             <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-400">
-              <AlertCircle className="h-4 w-4 shrink-0" />
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
               <span>{job.error ?? "Evaluation failed."}</span>
             </div>
           )}
 
           {isDone && (
             <div className="flex items-center gap-3 border-2 border-[var(--border)] bg-[var(--primary)]/20 px-4 py-3 font-body text-sm font-semibold text-[var(--foreground)]">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
               <span>
                 Evaluation complete —{" "}
                 <span className="font-medium">{result?.test_count ?? 0} questions</span>
@@ -327,7 +288,7 @@ export default function EvalPage() {
           {/* Idle placeholder */}
           {job.status === "idle" && (
             <div className="rounded-xl border border-dashed border-[var(--border)] px-8 py-16 text-center">
-              <FlaskConical className="mx-auto mb-3 h-10 w-10 text-[var(--foreground-muted)]/40" />
+              <FlaskConical className="mx-auto mb-3 h-10 w-10 text-teal-400/50" />
               <p className="text-sm font-medium text-[var(--foreground-muted)]">
                 No results yet
               </p>
@@ -340,7 +301,7 @@ export default function EvalPage() {
           {/* LLM Evaluation */}
           {(isDone || isRunning) && result && (
             <SectionCard
-              icon={<Brain className="h-4 w-4" />}
+              icon={<Brain className="h-4 w-4 text-violet-400" />}
               title="LLM Evaluation"
               badge={<ScoreBadge value={result.llm.score} max={5} />}
             >
@@ -381,7 +342,7 @@ export default function EvalPage() {
           {/* Retrieval Metrics */}
           {(isDone || isRunning) && result && (
             <SectionCard
-              icon={<Search className="h-4 w-4" />}
+              icon={<Search className="h-4 w-4 text-teal-400" />}
               title="Retrieval Metrics"
             >
               <div className="space-y-4">
@@ -404,7 +365,7 @@ export default function EvalPage() {
           {/* Config snapshot */}
           {isDone && result?.config_snapshot && (
             <SectionCard
-              icon={<Settings2 className="h-4 w-4" />}
+              icon={<Settings2 className="h-4 w-4 text-neutral-400" />}
               title="Config at time of run"
             >
               <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">

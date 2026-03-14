@@ -14,7 +14,8 @@ import {
   Shield,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import Link from "next/link";
+import { AdminPageHeader } from "@/components/admin-page-header";
+import { SectionCard } from "@/components/ui/section-card";
 import { getStoredAdminKey } from "@/lib/session-auth";
 
 const EMBEDDING_MODELS = [
@@ -80,33 +81,6 @@ const inputCls =
 const selectCls =
   "w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-colors cursor-pointer";
 
-function SectionCard({
-  icon,
-  title,
-  description,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--background-elevated)]">
-      <div className="flex items-start gap-3 border-b border-[var(--border)] px-6 py-4">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center border-2 border-[var(--border)] bg-[var(--border)] text-[var(--background)]">
-          {icon}
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-[var(--foreground)]">{title}</h3>
-          <p className="mt-0.5 text-xs text-[var(--foreground-muted)]">{description}</p>
-        </div>
-      </div>
-      <div className="p-6">{children}</div>
-    </div>
-  );
-}
-
 export default function SettingsPage() {
   const { config, isLoading, refetch } = useConfig();
   const [form, setForm] = useState<FullConfig>(EMPTY_FORM);
@@ -156,23 +130,10 @@ export default function SettingsPage() {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      {/* Header */}
-      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
-        <Link
-          href="/admin"
-          className="mb-2 inline-block font-body text-sm font-semibold text-[#000000]/60 hover:text-[#000000]"
-        >
-          ← Admin Panel
-        </Link>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
-              SETTINGS
-            </h2>
-            <p className="mt-0.5 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
-              Changes are saved to Supabase and take effect immediately.
-            </p>
-          </div>
+      <AdminPageHeader
+        title="SETTINGS"
+        subtitle="Changes are saved to Supabase and take effect immediately."
+        actions={
           <button
             type="button"
             onClick={() => refetch()}
@@ -182,8 +143,8 @@ export default function SettingsPage() {
             <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
           </button>
-        </div>
-      </header>
+        }
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-8">
@@ -198,9 +159,9 @@ export default function SettingsPage() {
               }`}
             >
               {message.type === "success" ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
               ) : (
-                <AlertCircle className="h-4 w-4 shrink-0" />
+                <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
               )}
               <span>{message.text}</span>
             </div>
@@ -208,7 +169,7 @@ export default function SettingsPage() {
 
           {/* Section 1 — Identity */}
           <SectionCard
-            icon={<Palette className="h-4 w-4" />}
+            icon={<Palette className="h-4 w-4 text-amber-400" />}
             title="Identity"
             description="Basic info used throughout the app and chat interface."
           >
@@ -236,7 +197,7 @@ export default function SettingsPage() {
 
           {/* Section 2 — Notifications */}
           <SectionCard
-            icon={<Bell className="h-4 w-4" />}
+            icon={<Bell className="h-4 w-4 text-sky-400" />}
             title="Notifications"
             description="Email address used for contact form submissions and system alerts."
           >
@@ -253,7 +214,7 @@ export default function SettingsPage() {
 
           {/* Section 3 — AI Models */}
           <SectionCard
-            icon={<Cpu className="h-4 w-4" />}
+            icon={<Cpu className="h-4 w-4 text-violet-400" />}
             title="AI models"
             description="Model changes take effect after restarting the backend server."
           >
@@ -380,7 +341,7 @@ export default function SettingsPage() {
 
           {/* Section 4 — Retrieval */}
           <SectionCard
-            icon={<Search className="h-4 w-4" />}
+            icon={<Search className="h-4 w-4 text-teal-400" />}
             title="Retrieval"
             description="Fine-tune hybrid search, metadata boosting, self-check, and multi-step reasoning."
           >
@@ -473,7 +434,7 @@ export default function SettingsPage() {
 
           {/* Section 5 — Security */}
           <SectionCard
-            icon={<Shield className="h-4 w-4" />}
+            icon={<Shield className="h-4 w-4 text-emerald-500" />}
             title="Security"
             description="Protect admin endpoints with an API key. Leave empty to disable (local dev)."
           >

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getStoredAdminKey } from "@/lib/session-auth";
-import Link from "next/link";
+import { AdminPageHeader } from "@/components/admin-page-header";
 import {
   ChevronRight,
   ChevronDown,
@@ -140,7 +140,7 @@ function ProcessingOverlay({
         <div className="flex justify-center">
           <div className="relative">
             <Icon
-              className={`h-12 w-12 text-[var(--primary)] ${
+              className={`h-12 w-12 text-teal-400 ${
                 phase === "restructure" ? "animate-pulse" : "animate-spin"
               }`}
               style={{ animationDuration: phase === "restructure" ? "1.5s" : "2s" }}
@@ -257,11 +257,11 @@ function TreeFolder({
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
         {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-[var(--foreground-muted)]" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-[var(--foreground-muted)]" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />
         )}
-        <Folder className="h-4 w-4 shrink-0 text-[var(--primary)]" />
+        <Folder className="h-4 w-4 shrink-0 text-teal-400" />
         <span className="font-medium text-[var(--foreground)] truncate">
           {node.name}
         </span>
@@ -313,11 +313,11 @@ function TreeDocument({
           className="flex flex-1 items-center gap-2 text-left min-w-0"
         >
           {open ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-[var(--foreground-muted)]" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
           ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-[var(--foreground-muted)]" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />
           )}
-          <FileText className="h-4 w-4 shrink-0 text-[var(--cta)]" />
+          <FileText className="h-4 w-4 shrink-0 text-sky-400" />
           <span className="text-sm text-[var(--foreground)] truncate flex-1">
             {node.name}
           </span>
@@ -346,7 +346,7 @@ function TreeDocument({
               className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm"
             >
               {chunk.section && (
-                <div className="text-xs font-medium text-[var(--primary)] mb-1">
+                <div className="text-xs font-medium text-teal-400 mb-1">
                   {chunk.section}
                 </div>
               )}
@@ -546,22 +546,10 @@ export default function KnowledgePage() {
         onConfirm={() => confirmDialog?.onConfirm()}
         onCancel={() => setConfirmDialog(null)}
       />
-      <header className="shrink-0 border-b-2 border-[var(--border)] bg-[var(--primary)] px-6 py-4 header-texture">
-        <div className="flex items-center justify-between">
-          <div>
-            <Link
-              href="/admin"
-              className="mb-2 inline-block font-body text-sm font-semibold text-[#000000]/60 hover:text-[#000000]"
-            >
-              ← Admin Panel
-            </Link>
-            <h2 className="font-heading text-3xl text-[#000000] uppercase tracking-wide">
-              KNOWLEDGE BASE
-            </h2>
-            <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
-              View, add, and delete documents in the vector store
-            </p>
-          </div>
+      <AdminPageHeader
+        title="KNOWLEDGE BASE"
+        subtitle="View, add, and delete documents in the vector store"
+        actions={
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -591,8 +579,8 @@ export default function KnowledgePage() {
               Refresh
             </button>
           </div>
-        </div>
-      </header>
+        }
+      />
 
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
@@ -770,7 +758,7 @@ export default function KnowledgePage() {
             <h3 className="mb-4 font-semibold text-[var(--foreground)]">Documents</h3>
             {loading ? (
               <div className="flex items-center justify-center py-16">
-                <Database className="h-12 w-12 animate-pulse text-[var(--primary)]/50" />
+                <Database className="h-12 w-12 animate-pulse text-teal-400/50" />
               </div>
             ) : data?.error ? (
               <div className="flex items-center gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-red-400">
@@ -779,7 +767,7 @@ export default function KnowledgePage() {
               </div>
             ) : !data?.tree?.length ? (
               <div className="rounded-lg border border-[var(--border)] bg-[var(--background-elevated)] p-8 text-center text-[var(--foreground-muted)]">
-                <Database className="mx-auto h-12 w-12 text-[var(--primary)]/30 mb-4" />
+                <Database className="mx-auto h-12 w-12 text-teal-400/50 mb-4" />
                 <p>No documents ingested yet.</p>
                 <p className="mt-2 text-sm">
                   Add a document above or run the ingestion script from the backend.
