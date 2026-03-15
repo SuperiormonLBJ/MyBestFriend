@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageCircle, Settings, Menu } from "lucide-react";
+import { MessageCircle, Settings, Menu, Briefcase } from "lucide-react";
 import { useConfig } from "@/components/config-provider";
 import { useState } from "react";
 
 const navItems = [
   { href: "/chat", label: "Chatbot", icon: MessageCircle },
+  { href: "/job-preparation", label: "Job Preparation", icon: Briefcase },
   { href: "/admin", label: "Admin Panel", icon: Settings },
 ];
 

@@ -196,6 +196,66 @@ def _apply_metadata_boost(docs: list, intent: dict) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Job preparation: requirement extraction and context
+# ---------------------------------------------------------------------------
+
+def extract_job_requirements(job_description: str) -> dict:
+    """
+    Extract keywords and requirement phrases from a job description using heuristics.
+    Returns {"keywords": list[str], "requirements": list[str]}.
+    """
+    lines = [line.strip() for line in job_description.splitlines() if line.strip()]
+    requirements: list[str] = []
+    seen_req: set[str] = set()
+
+    req_starters = ("must", "required", "need", "should", "prefer", "preferred", "experience with", "ability to", "knowledge of", "familiarity with")
+    for line in lines:
+        lower = line.lower()
+        if any(lower.startswith(s) or f" {s} " in f" {lower} " for s in req_starters):
+            clean = line.strip().lstrip("-*•· ").strip()
+            if len(clean) > 10 and clean not in seen_req:
+                seen_req.add(clean)
+                requirements.append(clean[:200])
+
+    stop_words = {"the", "and", "for", "with", "this", "that", "from", "have", "will", "your", "you", "we", "our", "are", "can", "able"}
+    raw_tokens = re.sub(r"[^\w\s]", " ", job_description.lower()).split()
+    keywords = []
+    seen_kw: set[str] = set()
+    for t in raw_tokens:
+        if len(t) > 2 and t not in stop_words and t.isalpha() and t not in seen_kw:
+            seen_kw.add(t)
+            keywords.append(t)
+    keywords = keywords[:30]
+
+    print(f"Extracted keywords: {keywords}")
+    print(f"Extracted requirements: {requirements}")
+
+    return {"keywords": keywords, "requirements": requirements}
+
+
+def get_job_context(job_description: str, reqs: dict | None = None) -> tuple[list, str]:
+    """
+    Build a focused search query from the job description and optional extracted reqs,
+    fetch and deduplicate context, rerank, and return (doc list, context string).
+    """
+    if reqs is None:
+        reqs = extract_job_requirements(job_description)
+    query_parts = [job_description[:1000]]
+    if reqs.get("keywords"):
+        query_parts.append(" ".join(reqs["keywords"][:15]))
+    if reqs.get("requirements"):
+        query_parts.append(" ".join(r[:80] for r in reqs["requirements"][:5]))
+    query = " ".join(query_parts).strip()
+    if not query:
+        query = job_description[:1000]
+    docs = fetch_context(query)
+    docs = deduplicate_context(docs)
+    docs = rerank_documents(query, docs, top_k=TOP_K)
+    context = "\n\n".join(doc.page_content for doc in docs)
+    return docs, context
+
+
+# ---------------------------------------------------------------------------
 # Core retrieval
 # ---------------------------------------------------------------------------
 

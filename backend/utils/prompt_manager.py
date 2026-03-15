@@ -25,6 +25,7 @@ from utils.prompts import (
     SYSTEM_PROMPT_EVALUATOR_GENERATOR,
     SELF_CHECK_PROMPT,
     MULTI_STEP_PROMPT,
+    COVER_LETTER_PROMPT,
 )
 
 # Registry of all managed prompts: key → {content, description}
@@ -60,6 +61,10 @@ _DEFAULTS: dict[str, dict] = {
     "MULTI_STEP_PROMPT": {
         "content": MULTI_STEP_PROMPT,
         "description": "Generates follow-up retrieval queries for complex multi-step questions. Placeholders: {query}, {initial_context}.",
+    },
+    "COVER_LETTER_PROMPT": {
+        "content": COVER_LETTER_PROMPT,
+        "description": "Job Preparation: generates a tailored cover letter from job description and RAG context. Placeholders: {job_description}, {requirements}, {keywords}, {context}, {owner_profile}, {word_limit}.",
     },
 }
 

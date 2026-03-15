@@ -15,14 +15,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .rag_retrieval import generate_answer, generate_answer_stream, get_knowledge_tree, reload_vectorstore
+from .rag_retrieval import (
+    generate_answer,
+    generate_answer_stream,
+    get_knowledge_tree,
+    reload_vectorstore,
+    extract_job_requirements,
+    get_job_context,
+)
 from utils.config_loader import ConfigLoader
 from utils.prompts import get_reference_template
 from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get_default_content, sync_defaults
 from utils.supabase_client import supabase_client
 from .document_ops import delete_document, add_document
 from .rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 import traceback as _traceback
 # Pre-import eval in the main thread so its module-level code (ConfigLoader, ChatOpenAI init)
@@ -85,6 +92,16 @@ class ChatResponse(BaseModel):
     sources: list = []
 
 
+class JobPrepRequest(BaseModel):
+    job_description: str
+    word_limit: int | None = None
+
+
+class JobPrepResponse(BaseModel):
+    cover_letter: str
+    word_limit: int
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     if config.get_use_graph():
@@ -116,6 +133,46 @@ def api_scope():
         return get_knowledge_scope()
     except Exception as e:
         return {"doc_types": {}, "year_range": None, "error": str(e)}
+
+
+@app.post("/api/job/cover-letter", response_model=JobPrepResponse)
+def api_job_cover_letter(request: JobPrepRequest):
+    """Generate a tailored cover letter from a job description using RAG context."""
+    word_limit = (
+        request.word_limit
+        if request.word_limit is not None
+        else config.get_cover_letter_word_limit()
+    )
+    if not request.job_description or not request.job_description.strip():
+        raise HTTPException(status_code=400, detail="job_description is required")
+    try:
+        reqs = extract_job_requirements(request.job_description)
+        _, context = get_job_context(request.job_description, reqs)
+        frontend_cfg = config.get_frontend_config()
+        owner_name = frontend_cfg.get("owner_name", "the candidate")
+        owner_profile = f"Candidate: {owner_name}"
+        requirements_str = "\n".join(f"- {r}" for r in reqs["requirements"][:15]) if reqs["requirements"] else "None extracted."
+        keywords_str = ", ".join(reqs["keywords"][:25]) if reqs["keywords"] else "None extracted."
+        prompt = get_prompt("COVER_LETTER_PROMPT").format(
+            job_description=request.job_description.strip()[:8000],
+            requirements=requirements_str,
+            keywords=keywords_str,
+            context=context[:12000] if context else "No relevant context found.",
+            owner_profile=owner_profile,
+            word_limit=word_limit,
+        )
+        llm = ChatOpenAI(model=config.get_generator_model())
+        response = llm.invoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content="Generate the cover letter now."),
+        ])
+        cover_letter = (response.content or "").strip()
+        return JobPrepResponse(cover_letter=cover_letter, word_limit=word_limit)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")

@@ -437,6 +437,28 @@ Rules:
 
 Respond only with the follow-up queries (one per line) or SUFFICIENT."""
 
+COVER_LETTER_PROMPT = """You are a cover letter writer. Your task is to write a concise, personalized cover letter for the candidate based on the job description and the candidate's profile context.
+
+Job description:
+{job_description}
+
+Extracted requirements / keywords (for reference):
+Requirements: {requirements}
+Keywords: {keywords}
+
+Candidate profile (from knowledge base):
+{owner_profile}
+
+Relevant context from the candidate's documents (CV, projects, career, etc.):
+{context}
+
+Instructions:
+- Write a professional cover letter that highlights how the candidate's experience and skills match the job.
+- Use ONLY information from the candidate profile and context above. Do not invent qualifications or facts.
+- Keep the cover letter under {word_limit} words. Be concise and impactful.
+- Address the role and company when evident from the job description.
+- Output only the cover letter text, no headings or meta-commentary."""
+
 RESTRUCTURE_TO_MD_PROMPT = """You are a document structuring assistant. You will receive raw, unstructured text and must restructure it into a clean markdown document for a RAG knowledge base.
 
 **Document type for this task:** {user_type}

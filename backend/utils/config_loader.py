@@ -183,6 +183,14 @@ class ConfigLoader:
         """
         return str(self.config.get('OWNER_ID', 'default'))
 
+    def get_cover_letter_word_limit(self) -> int:
+        """Default word limit for cover letter generation. Defaults to 400."""
+        val = self.config.get('COVER_LETTER_WORD_LIMIT', 400)
+        try:
+            return max(100, min(1500, int(val)))
+        except (TypeError, ValueError):
+            return 400
+
     def get_frontend_config(self) -> dict:
         """Return frontend-facing config (safe to expose via API)."""
         default = {
