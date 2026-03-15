@@ -1,5 +1,6 @@
 import re
 import time
+import json
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
@@ -194,42 +195,169 @@ def _apply_metadata_boost(docs: list, intent: dict) -> list:
     return [doc for doc, _ in boosted]
 
 
-# ---------------------------------------------------------------------------
-# Job preparation: requirement extraction and context
-# ---------------------------------------------------------------------------
-
-def extract_job_requirements(job_description: str) -> dict:
-    """
-    Extract keywords and requirement phrases from a job description using heuristics.
-    Returns {"keywords": list[str], "requirements": list[str]}.
-    """
+def _extract_job_requirements_heuristic(job_description: str) -> dict:
     lines = [line.strip() for line in job_description.splitlines() if line.strip()]
     requirements: list[str] = []
     seen_req: set[str] = set()
 
-    req_starters = ("must", "required", "need", "should", "prefer", "preferred", "experience with", "ability to", "knowledge of", "familiarity with")
+    req_starters = (
+        "must",
+        "required",
+        "need",
+        "should",
+        "prefer",
+        "preferred",
+        "experience with",
+        "ability to",
+        "knowledge of",
+        "familiarity with",
+    )
+    section_headings = {
+        "about the job",
+        "responsibilities",
+        "profile",
+        "qualifications",
+        "culture",
+    }
+    current_section = ""
     for line in lines:
         lower = line.lower()
-        if any(lower.startswith(s) or f" {s} " in f" {lower} " for s in req_starters):
+        if lower in section_headings:
+            current_section = lower
+            continue
+        in_req_section = current_section in {"responsibilities", "profile", "qualifications"}
+        if in_req_section or any(lower.startswith(s) or f" {s} " in f" {lower} " for s in req_starters):
             clean = line.strip().lstrip("-*•· ").strip()
             if len(clean) > 10 and clean not in seen_req:
                 seen_req.add(clean)
                 requirements.append(clean[:200])
 
-    stop_words = {"the", "and", "for", "with", "this", "that", "from", "have", "will", "your", "you", "we", "our", "are", "can", "able"}
-    raw_tokens = re.sub(r"[^\w\s]", " ", job_description.lower()).split()
+    stop_words = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "this",
+        "that",
+        "from",
+        "have",
+        "will",
+        "your",
+        "you",
+        "we",
+        "our",
+        "are",
+        "can",
+        "able",
+        "about",
+        "job",
+        "working",
+        "team",
+        "small",
+        "highly",
+        "productive",
+        "efficient",
+        "see",
+        "name",
+        "truth",
+        "write",
+        "role",
+        "company",
+    }
+    keyword_source = "\n".join(requirements) if requirements else job_description
+    raw_tokens = re.sub(r"[^\w\s]", " ", keyword_source.lower()).split()
     keywords = []
     seen_kw: set[str] = set()
     for t in raw_tokens:
         if len(t) > 2 and t not in stop_words and t.isalpha() and t not in seen_kw:
             seen_kw.add(t)
             keywords.append(t)
+    job_lower = job_description.lower()
+    skill_terms = [
+        "python",
+        "linux",
+        "unix",
+        "distributed",
+        "orchestration",
+        "scheduling",
+        "etl",
+        "trading",
+        "cluster",
+    ]
+    for term in skill_terms:
+        if term in job_lower and term not in seen_kw:
+            seen_kw.add(term)
+            keywords.insert(0, term)
     keywords = keywords[:30]
-
-    print(f"Extracted keywords: {keywords}")
-    print(f"Extracted requirements: {requirements}")
-
     return {"keywords": keywords, "requirements": requirements}
+
+
+# ---------------------------------------------------------------------------
+# Job preparation: requirement extraction and context
+# ---------------------------------------------------------------------------
+
+def extract_job_requirements(job_description: str) -> dict:
+    """
+    Extract technical requirements, culture signals, and keywords from a job
+    description using a small LLM, with a heuristic fallback.
+    Returns a dict with keys: technical_requirements, culture, keywords, requirements.
+    """
+    heuristic = _extract_job_requirements_heuristic(job_description)
+    try:
+        llm_small = ChatOpenAI(model=config.get_rewrite_model(), temperature=0)
+        system = SystemMessage(
+            content=(
+                "You extract structured information from job descriptions. "
+                "Given a full job description, return a strict JSON object with:\n"
+                '- "technical_requirements": list of concise bullet strings capturing skills, tools, and experience requirements.\n'
+                '- "culture": list of concise bullet strings describing culture, values, and soft factors.\n'
+                '- "keywords": list of short skill/role keywords (single words or short phrases).\n'
+                "Do not include headings like 'Responsibilities' or 'Qualifications' as items. "
+                "Respond with JSON only, no extra text."
+            )
+        )
+        human = HumanMessage(
+            content=f"JOB DESCRIPTION:\n\n{job_description}\n\nReturn JSON now."
+        )
+        response = llm_small.invoke([system, human])
+        data = json.loads(response.content or "{}")
+        tech = data.get("technical_requirements") or []
+        culture = data.get("culture") or []
+        keywords = data.get("keywords") or []
+
+        def _norm_list(x):
+            if isinstance(x, str):
+                return [x.strip()] if x.strip() else []
+            if isinstance(x, list):
+                out = []
+                for item in x:
+                    if isinstance(item, str):
+                        s = item.strip()
+                        if s:
+                            out.append(s)
+                return out
+            return []
+
+        tech_list = _norm_list(tech)
+        culture_list = _norm_list(culture)
+        keyword_list = _norm_list(keywords)
+        if not keyword_list:
+            keyword_list = heuristic["keywords"]
+        if not tech_list and heuristic["requirements"]:
+            tech_list = heuristic["requirements"]
+        return {
+            "technical_requirements": tech_list,
+            "culture": culture_list,
+            "keywords": keyword_list,
+            "requirements": tech_list or heuristic["requirements"],
+        }
+    except Exception:
+        return {
+            "technical_requirements": heuristic["requirements"],
+            "culture": [],
+            "keywords": heuristic["keywords"],
+            "requirements": heuristic["requirements"],
+        }
 
 
 def get_job_context(job_description: str, reqs: dict | None = None) -> tuple[list, str]:

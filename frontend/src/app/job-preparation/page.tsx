@@ -10,13 +10,20 @@ export default function JobPreparationPage() {
   const [wordLimit, setWordLimit] = useState(DEFAULT_WORD_LIMIT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ cover_letter: string; word_limit: number } | null>(null);
+  const [result, setResult] = useState<{
+    cover_letter: string;
+    word_limit: number;
+    technical_requirements: string[];
+    culture: string[];
+    keywords: string[];
+  } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showTech, setShowTech] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setResult(null);
+      setResult(null);
     if (!jobDescription.trim()) {
       setError("Please paste a job description.");
       return;
@@ -36,7 +43,13 @@ export default function JobPreparationPage() {
         setError(data.detail || data.error || "Failed to generate cover letter");
         return;
       }
-      setResult({ cover_letter: data.cover_letter, word_limit: data.word_limit });
+      setResult({
+        cover_letter: data.cover_letter,
+        word_limit: data.word_limit,
+        technical_requirements: data.technical_requirements ?? [],
+        culture: data.culture ?? [],
+        keywords: data.keywords ?? [],
+      });
     } catch (err) {
       setError("Request failed. Please try again.");
     } finally {
@@ -134,25 +147,89 @@ export default function JobPreparationPage() {
           </form>
 
           {result && (
-            <div
-              className="rounded-xl border-2 border-[var(--border)] bg-[var(--surface)] p-6"
-              style={{ boxShadow: "4px 4px 0 0 var(--border)" }}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3 mb-4">
-                <span className="font-body text-xs uppercase tracking-wider text-[var(--foreground-muted)]">
-                  Under {result.word_limit} words
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="flex items-center gap-2 border-2 border-[var(--border)] px-3 py-2 font-body text-sm font-semibold uppercase tracking-wide text-[var(--foreground)] transition-colors hover:bg-[var(--border)] cursor-pointer"
+            <div className="space-y-4">
+              {(result.technical_requirements.length > 0 ||
+                result.culture.length > 0 ||
+                result.keywords.length > 0) && (
+                <div
+                  className="rounded-xl border-2 border-[var(--border)] bg-[var(--surface)] p-6"
+                  style={{ boxShadow: "4px 4px 0 0 var(--border)" }}
                 >
-                  <Copy className="h-4 w-4 shrink-0" />
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <div className="font-body text-sm leading-relaxed text-[var(--foreground)] whitespace-pre-wrap">
-                {result.cover_letter}
+                  <h3 className="mb-3 font-heading text-sm uppercase tracking-wide text-[var(--foreground-muted)]">
+                    Job analysis
+                  </h3>
+                  <div className="space-y-4">
+                    {result.technical_requirements.length > 0 && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setShowTech((v) => !v)}
+                          className="flex w-full items-center justify-between border border-[var(--border)] bg-[var(--surface)] px-3 py-2 font-body text-xs font-semibold uppercase tracking-wide text-[var(--foreground)] cursor-pointer"
+                        >
+                          <span>Technical requirements ({result.technical_requirements.length})</span>
+                          <span>{showTech ? "−" : "+"}</span>
+                        </button>
+                        {showTech && (
+                          <ul className="mt-2 list-disc space-y-1 pl-5 font-body text-sm text-[var(--foreground)]">
+                            {result.technical_requirements.map((item, idx) => (
+                              <li key={idx}>{item}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                    {result.culture.length > 0 && (
+                      <div>
+                        <h4 className="mb-1 font-body text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
+                          Culture
+                        </h4>
+                        <ul className="list-disc space-y-1 pl-5 font-body text-sm text-[var(--foreground)]">
+                          {result.culture.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {result.keywords.length > 0 && (
+                      <div>
+                        <h4 className="mb-1 font-body text-xs font-semibold uppercase tracking-wide text-[var(--foreground-muted)]">
+                          Keywords
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {result.keywords.map((kw, idx) => (
+                            <span
+                              key={idx}
+                              className="rounded-full border border-[var(--border)] bg-[var(--background)] px-2 py-1 font-body text-xs text-[var(--foreground)]"
+                            >
+                              {kw}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div
+                className="rounded-xl border-2 border-[var(--border)] bg-[var(--surface)] p-6"
+                style={{ boxShadow: "4px 4px 0 0 var(--border)" }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3 mb-4">
+                  <span className="font-body text-xs uppercase tracking-wider text-[var(--foreground-muted)]">
+                    Under {result.word_limit} words
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="flex items-center gap-2 border-2 border-[var(--border)] px-3 py-2 font-body text-sm font-semibold uppercase tracking-wide text-[var(--foreground)] transition-colors hover:bg-[var(--border)] cursor-pointer"
+                  >
+                    <Copy className="h-4 w-4 shrink-0" />
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+                <div className="font-body text-sm leading-relaxed text-[var(--foreground)] whitespace-pre-wrap">
+                  {result.cover_letter}
+                </div>
               </div>
             </div>
           )}
