@@ -1,6 +1,5 @@
 import re
 import time
-import json
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_core.messages import HumanMessage, SystemMessage, convert_to_messages
@@ -326,7 +325,6 @@ def rewrite_query(query: str, history: list = []) -> str:
         {"role": "user", "content": user_prompt},
     ]
     rewritten_query = llm_rewrite.invoke(messages)
-    print(f"Rewritten query: {rewritten_query.content}")
     return rewritten_query.content
 
 
@@ -347,7 +345,6 @@ def rerank_documents(query: str, docs: list, top_k: int = TOP_K):
     llm_with_structured_output = llm_reranker.with_structured_output(RerankOrder)
     rerank_order = llm_with_structured_output.invoke(messages)
     reranked_docs = [docs[i - 1] for i in rerank_order.order]
-    print(f"Reranked order: {rerank_order.order}")
     return reranked_docs[:top_k]
 
 
@@ -443,21 +440,7 @@ def _generate_followup_queries(query: str, initial_context: str) -> list:
 # ---------------------------------------------------------------------------
 
 def _log_retrieval(question: str, chosen_chunks: list, no_info: bool, latency_ms: float) -> None:
-    log = {
-        "event": "retrieval",
-        "question": question[:200],
-        "no_info": no_info,
-        "latency_ms": round(latency_ms, 1),
-        "chunks": [
-            {
-                "source": c.metadata.get("source", ""),
-                "section": c.metadata.get("section", ""),
-                "doc_type": c.metadata.get("doc_type", ""),
-            }
-            for c in chosen_chunks
-        ],
-    }
-    print(json.dumps(log))
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +470,6 @@ def generate_answer(query, history: list = [], requester_name: str = "", request
             all_docs = deduplicate_context(reranked + extra_docs)
             reranked = rerank_documents(query, all_docs, top_k=TOP_K)
             context = "\n".join([doc.page_content for doc in reranked])
-            print(f"[multi_step] expanded with {len(followups)} followup queries")
 
     messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
     messages.extend(convert_to_messages(history))
@@ -502,14 +484,11 @@ def generate_answer(query, history: list = [], requester_name: str = "", request
     if config.get_self_check_enabled() and not no_info and answer:
         check = _self_check_answer(answer, context)
         if not check["supported"] and check["severity"] == "high":
-            print(f"[self_check] HIGH severity unsupported claims detected — marking no_info")
             no_info = True
 
     sources = _extract_sources(reranked)
     latency_ms = (time.time() - t0) * 1000
     _log_retrieval(query, reranked, no_info, latency_ms)
-    print(f"Generated answer with model: {config.get_generator_model()} | no_info={no_info}")
-
     return answer, context_docs, no_info, sources
 
 
@@ -536,7 +515,6 @@ def generate_answer_stream(query: str, history: list = []):
             all_docs = deduplicate_context(reranked + extra_docs)
             reranked = rerank_documents(query, all_docs, top_k=TOP_K)
             context = "\n".join([doc.page_content for doc in reranked])
-            print(f"[multi_step/stream] expanded with {len(followups)} followup queries")
 
     messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
     messages.extend(convert_to_messages(history))
@@ -556,13 +534,11 @@ def generate_answer_stream(query: str, history: list = []):
     if config.get_self_check_enabled() and not no_info and final:
         check = _self_check_answer(final, context)
         if not check["supported"] and check["severity"] == "high":
-            print(f"[self_check/stream] HIGH severity — marking no_info")
             no_info = True
 
     sources = _extract_sources(reranked)
     latency_ms = (time.time() - t0) * 1000
     _log_retrieval(query, reranked, no_info, latency_ms)
-    print(f"Streamed answer with model: {config.get_generator_model()} | no_info={no_info}")
     yield {"done": True, "no_info": no_info, "final": final, "sources": sources}
 
 

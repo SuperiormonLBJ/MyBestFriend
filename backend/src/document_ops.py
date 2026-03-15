@@ -57,7 +57,6 @@ def _sync_delete_supabase(filename: str, doc_type: str | None) -> None:
         if doc_type:
             query = query.eq("doc_type", doc_type)
         query.execute()
-        print(f"[document_ops] Supabase: deleted document row for {filename}")
     except Exception as e:
         print(f"[document_ops] Supabase delete warning (non-fatal): {e}")
 
@@ -69,7 +68,6 @@ def _sync_upsert_supabase(filename: str, doc_type: str, content: str) -> None:
             {"filename": filename, "doc_type": doc_type, "content": content},
             on_conflict="filename,doc_type",
         ).execute()
-        print(f"[document_ops] Supabase: upserted document row for {filename}")
     except Exception as e:
         print(f"[document_ops] Supabase upsert warning (non-fatal): {e}")
 
@@ -146,7 +144,6 @@ def add_document(content: str, filename: str, doc_type: str) -> dict:
         metadata = _sanitize_metadata(metadata)
         metadata["title"] = filename.split(".")[0]
         metadata["owner_id"] = _doc_ops_config.get_owner_id()
-        print(f"[document_ops] metadata for new document: {metadata}")
 
         # Use full content if body is empty (e.g. doc with only frontmatter)
         page_content = body.strip() if body.strip() else content
@@ -155,7 +152,6 @@ def add_document(content: str, filename: str, doc_type: str) -> dict:
             return result
 
         doc = Document(page_content=page_content, metadata=metadata)
-        print(f"[document_ops] doc for new document: {doc}")
         chunks = create_chunks_markdown([doc])
 
         if not chunks:
@@ -164,11 +160,9 @@ def add_document(content: str, filename: str, doc_type: str) -> dict:
 
         vectorstore.add_documents(chunks)
         result["chunks_added"] = len(chunks)
-        print(f"[document_ops] Added {len(chunks)} chunks for {filename} to vector store")
 
         # Sync to Supabase
         _sync_upsert_supabase(filename, doc_type, content)
     except Exception as e:
         result["error"] = str(e)
-        print(f"[document_ops] add_document error: {e}")
     return result

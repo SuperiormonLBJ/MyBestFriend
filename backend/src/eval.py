@@ -41,7 +41,6 @@ def load_test_questions() -> list[TestQuestion]:
         for line in f:
             data = json.loads(line.strip()) 
             tests.append(TestQuestion(**data))
-        print("Loaded {} test questions".format(len(tests)))
     return tests
 
 def evaluate_response(test_question: TestQuestion) -> RetrievalLLMEval:
@@ -172,10 +171,4 @@ if __name__ == "__main__":
         ],
         embeddings=embeddings,
         llm=llm,
-    )
-
-    df = result.to_pandas()
-    print("contect precision: ", format(df["context_precision"].mean(), ".2f"))
-    print("contect recall: ", format(df["context_recall"].mean(), ".2f"))
-    print("faithfulness: ", format(df["faithfulness"].mean(), ".2f"))
-    print("answer relevancy: ", format(df["answer_relevancy"].mean(), ".2f"))   
+    )   

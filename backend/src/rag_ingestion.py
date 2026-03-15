@@ -121,7 +121,6 @@ def load_document_md() -> str:
 
         documents.append(doc)  # Has to be Document object !!!
 
-    print(f"loaded {len(documents)} md documents")
     return documents
 
 def load_document():
@@ -200,7 +199,6 @@ def embed_chunks(chunks):
 
     # Clear all existing chunks before re-ingestion (neq null-uuid matches all rows)
     supabase_client.table("document_chunks").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-    print("Cleared existing document_chunks from Supabase")
 
     vector_store = SupabaseVectorStore.from_documents(
         documents=chunks,
@@ -209,10 +207,6 @@ def embed_chunks(chunks):
         table_name="document_chunks",
         query_name="match_documents",
     )
-
-    count_result = supabase_client.table("document_chunks").select("id", count="exact").execute()
-    count = count_result.count or 0
-    print(f"Vectorstore created with {count:,} chunks in Supabase")
 
     return vector_store
 
