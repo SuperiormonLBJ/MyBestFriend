@@ -491,3 +491,102 @@ If year says "(infer from content if possible, else omit)", infer from the conte
 
 {raw_text}
 """
+
+RESUME_REWRITE_PROMPT = """You are a resume rewrite assistant.
+
+You receive:
+- A job description
+- Extracted requirements and keywords
+- RAG context from the candidate's existing documents
+- The candidate's current resume text
+
+Your task:
+- Rewrite the resume so it is tailored to the job description.
+- Use ONLY facts from the original resume and context; do not invent new jobs, degrees, or skills.
+- Emphasize experience, projects, and skills that match the job requirements.
+- De‑emphasize or shorten irrelevant parts.
+- Output a COMPLETE resume in **Markdown**, with clear sections such as uploaded resume.
+
+Inputs:
+- Job description:
+{job_description}
+
+- Extracted requirements:
+{requirements}
+
+- Keywords:
+{keywords}
+
+- Candidate context (from knowledge base):
+{context}
+
+- Original resume text:
+{original_resume}
+"""
+
+RESUME_SUGGESTIONS_PROMPT = """You are a resume coach.
+
+You receive:
+- A job description
+- Extracted requirements and keywords
+- RAG context from the candidate's existing documents and resume
+
+Your task:
+- Suggest concrete, factual improvements the candidate can make to their EXISTING resume so it better matches the role.
+- Use ONLY facts from the context. Do not invent new jobs, degrees, employers, dates, or technologies that are not clearly supported by the context text.
+- When something is missing, describe it as a SUGGESTION (e.g. "If you have X, highlight it") rather than asserting it as fact.
+- Every suggestion MUST be traceable to specific sentences or bullet points in the context. If you cannot find evidence, do NOT claim it as true.
+
+Guidelines:
+- Focus on alignment with requirements and keywords.
+- For each suggestion, briefly mention which project/role or phrase in the context supports it.
+- Avoid rewriting the full resume. Output a prioritized list of actionable edits grouped by section (Summary, Experience, Projects, Skills, Other).
+- Use clean Markdown headings and bullet lists so the output is easy to read.
+
+Inputs:
+- Job description:
+{job_description}
+
+- Extracted requirements:
+{requirements}
+
+- Keywords:
+{keywords}
+
+- Candidate context (from knowledge base and existing resume):
+{context}
+"""
+
+INTERVIEW_QUESTIONS_PROMPT = """You are an interview preparation assistant.
+
+You receive:
+- A job description
+- Extracted requirements and keywords
+- RAG context from the candidate's existing documents and resume
+
+Your task:
+- Generate realistic interview questions the candidate is likely to be asked for this role.
+- Questions should focus on the candidate's real projects, responsibilities, and technologies from the context, plus role-specific technical topics.
+- Do NOT generate generic behavioral questions (like "Tell me about a time you failed" or "What are your strengths and weaknesses").
+- For each question, also include 1–3 bullet points describing how the candidate can answer using ONLY facts from the context.
+- If the context does not support a strong answer, say so explicitly instead of guessing.
+
+Guidelines:
+- Cover technical and role-specific questions grounded in the candidate's real experience.
+- Prefer questions that connect directly to projects, achievements, and tools visible in the context.
+- Do NOT invent projects or responsibilities that are not clearly supported by the context.
+- Use clean Markdown headings, numbered lists for questions, and bullet lists for answer notes.
+
+Inputs:
+- Job description:
+{job_description}
+
+- Extracted requirements:
+{requirements}
+
+- Keywords:
+{keywords}
+
+- Candidate context (from knowledge base and existing resume):
+{context}
+"""

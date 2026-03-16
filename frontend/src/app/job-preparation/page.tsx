@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Copy, Loader2 } from "lucide-react";
 
 const DEFAULT_WORD_LIMIT = 400;
@@ -16,9 +18,12 @@ export default function JobPreparationPage() {
     technical_requirements: string[];
     culture: string[];
     keywords: string[];
+    resume_suggestions: string;
+    interview_questions: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
   const [showTech, setShowTech] = useState(false);
+  const [activeView, setActiveView] = useState<"cover" | "resume" | "interview">("cover");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +35,7 @@ export default function JobPreparationPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/job/cover-letter", {
+      const res = await fetch("/api/job/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -49,7 +54,10 @@ export default function JobPreparationPage() {
         technical_requirements: data.technical_requirements ?? [],
         culture: data.culture ?? [],
         keywords: data.keywords ?? [],
+        resume_suggestions: data.resume_suggestions ?? "",
+        interview_questions: data.interview_questions ?? "",
       });
+      setActiveView("cover");
     } catch (err) {
       setError("Request failed. Please try again.");
     } finally {
@@ -58,9 +66,16 @@ export default function JobPreparationPage() {
   };
 
   const handleCopy = async () => {
-    if (!result?.cover_letter) return;
+    if (!result) return;
     try {
-      await navigator.clipboard.writeText(result.cover_letter);
+      const text =
+        activeView === "cover"
+          ? result.cover_letter
+          : activeView === "resume"
+          ? result.resume_suggestions
+          : result.interview_questions;
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -77,7 +92,7 @@ export default function JobPreparationPage() {
               JOB PREPARATION
             </h2>
             <p className="mt-1 font-body text-base font-bold text-[#000000]/75 uppercase tracking-widest">
-              Generate tailored cover letters from job descriptions
+              Generate tailored preparation from job descriptions
             </p>
           </div>
         </div>
@@ -141,7 +156,7 @@ export default function JobPreparationPage() {
                   Generating…
                 </>
               ) : (
-                "Generate cover letter"
+                "Generate preparation"
               )}
             </button>
           </form>
@@ -215,9 +230,41 @@ export default function JobPreparationPage() {
                 style={{ boxShadow: "4px 4px 0 0 var(--border)" }}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3 mb-4">
-                  <span className="font-body text-xs uppercase tracking-wider text-[var(--foreground-muted)]">
-                    Under {result.word_limit} words
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("cover")}
+                      className={`px-3 py-1 text-xs font-body font-semibold uppercase tracking-wide border-2 cursor-pointer ${
+                        activeView === "cover"
+                          ? "bg-[var(--primary)] text-[#000000] border-[var(--border)]"
+                          : "bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)]"
+                      }`}
+                    >
+                      Cover letter
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("resume")}
+                      className={`px-3 py-1 text-xs font-body font-semibold uppercase tracking-wide border-2 cursor-pointer ${
+                        activeView === "resume"
+                          ? "bg-[var(--primary)] text-[#000000] border-[var(--border)]"
+                          : "bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)]"
+                      }`}
+                    >
+                      Resume suggestions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("interview")}
+                      className={`px-3 py-1 text-xs font-body font-semibold uppercase tracking-wide border-2 cursor-pointer ${
+                        activeView === "interview"
+                          ? "bg-[var(--primary)] text-[#000000] border-[var(--border)]"
+                          : "bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)]"
+                      }`}
+                    >
+                      Interview questions
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={handleCopy}
@@ -227,8 +274,16 @@ export default function JobPreparationPage() {
                     {copied ? "Copied" : "Copy"}
                   </button>
                 </div>
-                <div className="font-body text-sm leading-relaxed text-[var(--foreground)] whitespace-pre-wrap">
-                  {result.cover_letter}
+                <div className="font-body text-sm leading-relaxed text-[var(--foreground)]">
+                  <div className="prose max-w-none font-body text-[var(--foreground)] prose-headings:font-heading prose-headings:text-[var(--foreground)] prose-strong:text-[var(--foreground)] prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-p:my-2 prose-p:leading-relaxed">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {activeView === "cover"
+                        ? result.cover_letter
+                        : activeView === "resume"
+                        ? result.resume_suggestions || "No resume suggestions available."
+                        : result.interview_questions || "No interview questions available."}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               </div>
             </div>

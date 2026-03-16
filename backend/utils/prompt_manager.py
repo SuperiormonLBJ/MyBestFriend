@@ -17,6 +17,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from utils.prompts import (
+    RESUME_REWRITE_PROMPT,
     SYSTEM_PROMPT_GENERATOR,
     SYSTEM_PROMPT_RERANKER,
     REWRITE_PROMPT,
@@ -26,6 +27,8 @@ from utils.prompts import (
     SELF_CHECK_PROMPT,
     MULTI_STEP_PROMPT,
     COVER_LETTER_PROMPT,
+    RESUME_SUGGESTIONS_PROMPT,
+    INTERVIEW_QUESTIONS_PROMPT,
 )
 
 # Registry of all managed prompts: key → {content, description}
@@ -65,6 +68,18 @@ _DEFAULTS: dict[str, dict] = {
     "COVER_LETTER_PROMPT": {
         "content": COVER_LETTER_PROMPT,
         "description": "Job Preparation: generates a tailored cover letter from job description and RAG context. Placeholders: {job_description}, {requirements}, {keywords}, {context}, {owner_profile}, {word_limit}.",
+    },
+    "RESUME_REWRITE_PROMPT": {
+        "content": RESUME_REWRITE_PROMPT,
+        "description": "Rewrites a resume in Markdown, tailored to a job description using RAG context.",
+    },
+    "RESUME_SUGGESTIONS_PROMPT": {
+        "content": RESUME_SUGGESTIONS_PROMPT,
+        "description": "Job Preparation: suggests grounded edits to the existing resume based on job description and RAG context.",
+    },
+    "INTERVIEW_QUESTIONS_PROMPT": {
+        "content": INTERVIEW_QUESTIONS_PROMPT,
+        "description": "Job Preparation: generates interview questions and grounded answer guidance from job description and RAG context.",
     },
 }
 

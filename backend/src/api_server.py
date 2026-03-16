@@ -12,8 +12,13 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
+import tempfile
+from fastapi import UploadFile, HTTPException, Form, File
+from docx import Document
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from .rag_retrieval import (
     generate_answer,
@@ -105,6 +110,11 @@ class JobPrepResponse(BaseModel):
     keywords: list[str] = []
 
 
+class JobPrepFullResponse(JobPrepResponse):
+    resume_suggestions: str
+    interview_questions: str
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     if config.get_use_graph():
@@ -181,6 +191,87 @@ def api_job_cover_letter(request: JobPrepRequest):
             technical_requirements=tech_reqs,
             culture=culture,
             keywords=keywords,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        _traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/job/prepare", response_model=JobPrepFullResponse)
+def api_job_prepare(request: JobPrepRequest):
+    """Run full job preparation once: analysis, cover letter, resume suggestions, interview questions."""
+    word_limit = (
+        request.word_limit
+        if request.word_limit is not None
+        else config.get_cover_letter_word_limit()
+    )
+    if not request.job_description or not request.job_description.strip():
+        raise HTTPException(status_code=400, detail="job_description is required")
+    try:
+        reqs = extract_job_requirements(request.job_description)
+        _, context = get_job_context(request.job_description, reqs)
+        tech_reqs = reqs.get("technical_requirements") or reqs.get("requirements") or []
+        culture = reqs.get("culture") or []
+        keywords = reqs.get("keywords") or []
+        frontend_cfg = config.get_frontend_config()
+        owner_name = frontend_cfg.get("owner_name", "the candidate")
+        owner_profile = f"Candidate: {owner_name}"
+        requirements_str = (
+            "\n".join(f"- {r}" for r in tech_reqs[:15]) if tech_reqs else "None extracted."
+        )
+        keywords_str = ", ".join(keywords[:25]) if keywords else "None extracted."
+        safe_context = context[:12000] if context else "No relevant context found."
+
+        llm = ChatOpenAI(model=config.get_generator_model())
+
+        cover_prompt = get_prompt("COVER_LETTER_PROMPT").format(
+            job_description=request.job_description.strip()[:8000],
+            requirements=requirements_str,
+            keywords=keywords_str,
+            context=safe_context,
+            owner_profile=owner_profile,
+            word_limit=word_limit,
+        )
+        cover_resp = llm.invoke([
+            SystemMessage(content=cover_prompt),
+            HumanMessage(content="Generate the cover letter now."),
+        ])
+        cover_letter = (cover_resp.content or "").strip()
+
+        resume_prompt = get_prompt("RESUME_SUGGESTIONS_PROMPT").format(
+            job_description=request.job_description.strip()[:8000],
+            requirements=requirements_str,
+            keywords=keywords_str,
+            context=safe_context,
+        )
+        resume_resp = llm.invoke([
+            SystemMessage(content=resume_prompt),
+            HumanMessage(content="List resume improvement suggestions now."),
+        ])
+        resume_suggestions = (resume_resp.content or "").strip()
+
+        interview_prompt = get_prompt("INTERVIEW_QUESTIONS_PROMPT").format(
+            job_description=request.job_description.strip()[:8000],
+            requirements=requirements_str,
+            keywords=keywords_str,
+            context=safe_context,
+        )
+        interview_resp = llm.invoke([
+            SystemMessage(content=interview_prompt),
+            HumanMessage(content="Generate interview questions and guidance now."),
+        ])
+        interview_questions = (interview_resp.content or "").strip()
+
+        return JobPrepFullResponse(
+            cover_letter=cover_letter,
+            word_limit=word_limit,
+            technical_requirements=tech_reqs,
+            culture=culture,
+            keywords=keywords,
+            resume_suggestions=resume_suggestions,
+            interview_questions=interview_questions,
         )
     except HTTPException:
         raise
@@ -578,3 +669,143 @@ def api_get_evaluation(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+async def _extract_resume_text_from_pdf(file: UploadFile) -> str:
+    # 1. Save the uploaded file to a temporary location
+    # SylphxAI needs a file path to read accurately
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        # 2. Configure the SylphxAI MCP Server
+        # We use 'npx' to run the latest version of the reader
+        server_params = StdioServerParameters(
+            command="npx",
+            args=["-y", "@sylphx/pdf-reader-mcp"],
+            env=os.environ.copy()
+        )
+
+        # 3. Connect and Execute
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                
+                # Call the specific 'read_pdf' tool provided by SylphxAI
+                # The tool expects a 'path' argument
+                result = await session.call_tool(
+                    "read_pdf", 
+                    arguments={"path": tmp_path}
+                )
+
+                if not result.content:
+                    raise HTTPException(status_code=500, detail="Failed to extract text from PDF.")
+
+                # SylphxAI returns content as a list of TextContent objects
+                return result.content[0].text
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SylphxAI Error: {str(e)}")
+    
+    finally:
+        # 4. Cleanup the temporary file
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+class ResumeRewriteResponse(BaseModel):
+    markdown_resume: str
+
+@app.post("/api/resume/rewrite", response_model=ResumeRewriteResponse)
+async def api_resume_rewrite(
+    job_description: str = Form(...),
+    resume_pdf: UploadFile = File(...),
+):
+    if not job_description.strip():
+        raise HTTPException(status_code=400, detail="job_description is required")
+
+    # 1) Extract resume text from PDF (plug SylphxAI here)
+    original_resume = await _extract_resume_text_from_pdf(resume_pdf)
+
+    # 2) Get job requirements + RAG context (you already have this)
+    reqs = extract_job_requirements(job_description)
+    _, context = get_job_context(job_description, reqs)
+    tech_reqs = reqs.get("technical_requirements") or reqs.get("requirements") or []
+    keywords = reqs.get("keywords") or []
+
+    requirements_str = "\n".join(f"- {r}" for r in tech_reqs[:20]) if tech_reqs else "None extracted."
+    keywords_str = ", ".join(keywords[:30]) if keywords else "None extracted."
+
+    # 3) Build prompt and call SylphxAI / LLM
+    prompt = get_prompt("RESUME_REWRITE_PROMPT").format(
+        job_description=job_description.strip()[:8000],
+        requirements=requirements_str,
+        keywords=keywords_str,
+        context=context[:12000] if context else "No relevant context found.",
+        original_resume=original_resume[:12000],
+    )
+    llm = ChatOpenAI(model=config.get_rewrite_model())
+    response = llm.invoke([
+        SystemMessage(content=prompt),
+        HumanMessage(content="Rewrite the resume now."),
+    ])
+    markdown_resume = (response.content or "").strip()
+
+    # Strip accidental fences if the model wrapped it
+    if markdown_resume.startswith("```"):
+        lines = markdown_resume.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        markdown_resume = "\n".join(lines).strip()
+
+    if not markdown_resume:
+        raise HTTPException(status_code=500, detail="Empty resume generated.")
+
+    return ResumeRewriteResponse(markdown_resume=markdown_resume)
+
+
+class ResumeDocxRequest(BaseModel):
+    markdown_resume: str
+
+
+@app.post("/api/resume/docx")
+def api_resume_docx(request: ResumeDocxRequest):
+    if not request.markdown_resume.strip():
+        raise HTTPException(status_code=400, detail="markdown_resume is required")
+
+    doc = Document("template/Resume.docx")
+    for raw_line in request.markdown_resume.splitlines():
+        line = raw_line.rstrip()
+
+        if not line:
+            doc.add_paragraph("")
+            continue
+
+        if line.startswith("### "):
+            doc.add_heading(line[4:].strip(), level=3)
+            continue
+        if line.startswith("## "):
+            doc.add_heading(line[3:].strip(), level=2)
+            continue
+        if line.startswith("# "):
+            doc.add_heading(line[2:].strip(), level=1)
+            continue
+
+        if line.lstrip().startswith(("- ", "* ")):
+            text = line.lstrip()[2:].strip()
+            doc.add_paragraph(text, style="List Bullet")
+            continue
+
+        doc.add_paragraph(line)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+        doc.save(tmp.name)
+        tmp_path = tmp.name
+
+    return FileResponse(
+        tmp_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="rewritten_resume.docx",
+    )
