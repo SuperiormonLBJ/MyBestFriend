@@ -115,6 +115,42 @@ class JobPrepFullResponse(JobPrepResponse):
     interview_questions: str
 
 
+def _prepare_job_context(job_description: str, word_limit_override: int | None = None):
+    """Shared helper to extract job requirements, RAG context, and formatting strings."""
+    word_limit = (
+        word_limit_override
+        if word_limit_override is not None
+        else config.get_cover_letter_word_limit()
+    )
+    if not job_description or not job_description.strip():
+        raise HTTPException(status_code=400, detail="job_description is required")
+
+    reqs = extract_job_requirements(job_description)
+    _, context = get_job_context(job_description, reqs)
+    tech_reqs = reqs.get("technical_requirements") or reqs.get("requirements") or []
+    culture = reqs.get("culture") or []
+    keywords = reqs.get("keywords") or []
+    frontend_cfg = config.get_frontend_config()
+    owner_name = frontend_cfg.get("owner_name", "the candidate")
+    owner_profile = f"Candidate: {owner_name}"
+    requirements_str = (
+        "\n".join(f"- {r}" for r in tech_reqs[:15]) if tech_reqs else "None extracted."
+    )
+    keywords_str = ", ".join(keywords[:25]) if keywords else "None extracted."
+    safe_context = context[:12000] if context else "No relevant context found."
+
+    return {
+        "word_limit": word_limit,
+        "tech_reqs": tech_reqs,
+        "culture": culture,
+        "keywords": keywords,
+        "owner_profile": owner_profile,
+        "requirements_str": requirements_str,
+        "keywords_str": keywords_str,
+        "safe_context": safe_context,
+    }
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     if config.get_use_graph():
@@ -151,33 +187,15 @@ def api_scope():
 @app.post("/api/job/cover-letter", response_model=JobPrepResponse)
 def api_job_cover_letter(request: JobPrepRequest):
     """Generate a tailored cover letter from a job description using RAG context."""
-    word_limit = (
-        request.word_limit
-        if request.word_limit is not None
-        else config.get_cover_letter_word_limit()
-    )
-    if not request.job_description or not request.job_description.strip():
-        raise HTTPException(status_code=400, detail="job_description is required")
     try:
-        reqs = extract_job_requirements(request.job_description)
-        _, context = get_job_context(request.job_description, reqs)
-        tech_reqs = reqs.get("technical_requirements") or reqs.get("requirements") or []
-        culture = reqs.get("culture") or []
-        keywords = reqs.get("keywords") or []
-        frontend_cfg = config.get_frontend_config()
-        owner_name = frontend_cfg.get("owner_name", "the candidate")
-        owner_profile = f"Candidate: {owner_name}"
-        requirements_str = (
-            "\n".join(f"- {r}" for r in tech_reqs[:15]) if tech_reqs else "None extracted."
-        )
-        keywords_str = ", ".join(keywords[:25]) if keywords else "None extracted."
+        ctx = _prepare_job_context(request.job_description, request.word_limit)
         prompt = get_prompt("COVER_LETTER_PROMPT").format(
             job_description=request.job_description.strip()[:8000],
-            requirements=requirements_str,
-            keywords=keywords_str,
-            context=context[:12000] if context else "No relevant context found.",
-            owner_profile=owner_profile,
-            word_limit=word_limit,
+            requirements=ctx["requirements_str"],
+            keywords=ctx["keywords_str"],
+            context=ctx["safe_context"],
+            owner_profile=ctx["owner_profile"],
+            word_limit=ctx["word_limit"],
         )
         llm = ChatOpenAI(model=config.get_generator_model())
         response = llm.invoke([
@@ -187,10 +205,10 @@ def api_job_cover_letter(request: JobPrepRequest):
         cover_letter = (response.content or "").strip()
         return JobPrepResponse(
             cover_letter=cover_letter,
-            word_limit=word_limit,
-            technical_requirements=tech_reqs,
-            culture=culture,
-            keywords=keywords,
+            word_limit=ctx["word_limit"],
+            technical_requirements=ctx["tech_reqs"],
+            culture=ctx["culture"],
+            keywords=ctx["keywords"],
         )
     except HTTPException:
         raise
@@ -202,37 +220,17 @@ def api_job_cover_letter(request: JobPrepRequest):
 @app.post("/api/job/prepare", response_model=JobPrepFullResponse)
 def api_job_prepare(request: JobPrepRequest):
     """Run full job preparation once: analysis, cover letter, resume suggestions, interview questions."""
-    word_limit = (
-        request.word_limit
-        if request.word_limit is not None
-        else config.get_cover_letter_word_limit()
-    )
-    if not request.job_description or not request.job_description.strip():
-        raise HTTPException(status_code=400, detail="job_description is required")
     try:
-        reqs = extract_job_requirements(request.job_description)
-        _, context = get_job_context(request.job_description, reqs)
-        tech_reqs = reqs.get("technical_requirements") or reqs.get("requirements") or []
-        culture = reqs.get("culture") or []
-        keywords = reqs.get("keywords") or []
-        frontend_cfg = config.get_frontend_config()
-        owner_name = frontend_cfg.get("owner_name", "the candidate")
-        owner_profile = f"Candidate: {owner_name}"
-        requirements_str = (
-            "\n".join(f"- {r}" for r in tech_reqs[:15]) if tech_reqs else "None extracted."
-        )
-        keywords_str = ", ".join(keywords[:25]) if keywords else "None extracted."
-        safe_context = context[:12000] if context else "No relevant context found."
-
+        ctx = _prepare_job_context(request.job_description, request.word_limit)
         llm = ChatOpenAI(model=config.get_generator_model())
 
         cover_prompt = get_prompt("COVER_LETTER_PROMPT").format(
             job_description=request.job_description.strip()[:8000],
-            requirements=requirements_str,
-            keywords=keywords_str,
-            context=safe_context,
-            owner_profile=owner_profile,
-            word_limit=word_limit,
+            requirements=ctx["requirements_str"],
+            keywords=ctx["keywords_str"],
+            context=ctx["safe_context"],
+            owner_profile=ctx["owner_profile"],
+            word_limit=ctx["word_limit"],
         )
         cover_resp = llm.invoke([
             SystemMessage(content=cover_prompt),
@@ -242,9 +240,9 @@ def api_job_prepare(request: JobPrepRequest):
 
         resume_prompt = get_prompt("RESUME_SUGGESTIONS_PROMPT").format(
             job_description=request.job_description.strip()[:8000],
-            requirements=requirements_str,
-            keywords=keywords_str,
-            context=safe_context,
+            requirements=ctx["requirements_str"],
+            keywords=ctx["keywords_str"],
+            context=ctx["safe_context"],
         )
         resume_resp = llm.invoke([
             SystemMessage(content=resume_prompt),
@@ -254,9 +252,9 @@ def api_job_prepare(request: JobPrepRequest):
 
         interview_prompt = get_prompt("INTERVIEW_QUESTIONS_PROMPT").format(
             job_description=request.job_description.strip()[:8000],
-            requirements=requirements_str,
-            keywords=keywords_str,
-            context=safe_context,
+            requirements=ctx["requirements_str"],
+            keywords=ctx["keywords_str"],
+            context=ctx["safe_context"],
         )
         interview_resp = llm.invoke([
             SystemMessage(content=interview_prompt),
@@ -266,10 +264,10 @@ def api_job_prepare(request: JobPrepRequest):
 
         return JobPrepFullResponse(
             cover_letter=cover_letter,
-            word_limit=word_limit,
-            technical_requirements=tech_reqs,
-            culture=culture,
-            keywords=keywords,
+            word_limit=ctx["word_limit"],
+            technical_requirements=ctx["tech_reqs"],
+            culture=ctx["culture"],
+            keywords=ctx["keywords"],
             resume_suggestions=resume_suggestions,
             interview_questions=interview_questions,
         )

@@ -28,7 +28,7 @@ export default function JobPreparationPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-      setResult(null);
+    setResult(null);
     if (!jobDescription.trim()) {
       setError("Please paste a job description.");
       return;
@@ -45,7 +45,7 @@ export default function JobPreparationPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.detail || data.error || "Failed to generate cover letter");
+        setError(data.detail || data.error || "Failed to generate preparation");
         return;
       }
       setResult({
