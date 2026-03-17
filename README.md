@@ -1,98 +1,192 @@
 # MyBestFriend – Personal Digital Twin
 
-MyBestFriend is a production-grade RAG chatbot and admin API that answers questions about a single person (the "owner") using only curated, versioned documents. It runs as a FastAPI backend with a Next.js chat UI and a Supabase-backed vector store.
+MyBestFriend is a production-grade *personal digital twin*: a RAG chatbot and admin console that answers questions about a single person (the “owner”) using only curated, versioned documents. It runs as a FastAPI backend, a Next.js frontend, and a Supabase-backed Postgres + vector store.
 
-## 1. Functionalities
+---
 
-### Chat experience
+## 1. Core features
 
-- Streaming chat UI in the `frontend/` app, optimized for desktop and mobile.
-- Answers questions about the owner using only ingested markdown documents.
-- Shows an unknown-answer state: if the RAG stack cannot confidently answer, the backend flags `no_info` and the UI offers a follow-up contact form.
-- Persists conversation history in the browser via `localStorage` so users can refresh without losing the thread.
+### 1.1 Chat experience
 
-### RAG pipeline
+- **Owner-centric Q&A**: Answers questions about the owner (career, projects, education, hobbies, personality) using only ingested markdown documents.
+- **Streaming UI**: Next.js 16 + React 19 chat interface with token streaming, desktop/mobile friendly.
+- **Unknown-answer handling**: If the RAG stack can’t confidently answer, the backend sets `no_info` and the UI shows a dedicated fallback state plus a contact form.
+- **Local history**: Conversation history is persisted in `localStorage` so refreshes don’t lose the thread.
 
-- Loads all markdown documents from the configured data directory (via `ConfigLoader`) under the backend project root.
-- Supports simple YAML-style frontmatter (`--- ... ---`) to attach metadata such as `type`, `doc_type`, `year`, `importance`, and `title`.
-- Normalizes metadata and writes one `Document` per source file.
-- Splits markdown into section-level chunks using `##` / `###` headings and prepends lightweight labels (project title, section name) into the chunk text.
-- Embeds chunks with OpenAI embeddings (model configured via `ConfigLoader`) and stores them in a Supabase `document_chunks` table via `SupabaseVectorStore`.
-- Provides a `reload_vectorstore` hook so a full re-ingest can rebuild the live vector store without restarting the app.
+### 1.2 RAG pipeline
 
-### Knowledge management & admin APIs
+- **Markdown-based knowledge base**:
+  - Loads markdown documents from a configured data directory (via `ConfigLoader`) under `backend/`.
+  - Supports YAML-style frontmatter (`--- ... ---`) with fields like `doc_type`, `type`, `year`, `importance`, `title`, etc.
+- **Chunking & embeddings**:
+  - Splits documents into section-level chunks using `##` / `###` headings and attaches lightweight labels (e.g. project title, section name) directly in chunk text.
+  - Embeds chunks using the configured embedding model and stores them in a Supabase `document_chunks` table via `SupabaseVectorStore`.
+- **Live reload**:
+  - `/api/ingest` fully re-ingests documents, rebuilds the vector store, and keeps the in-memory retriever hot without restarting the backend.
 
-The FastAPI backend exposes a small admin surface:
+### 1.3 Job preparation (LLM-based JD analysis)
 
-- `POST /api/ingest` — re-ingest all documents from disk, rebuild the vector store, and sync source documents into a Supabase `documents` table.
-- `GET /api/knowledge` — return a tree of ingested documents and chunk counts for admin UIs.
-- `POST /api/documents` — add a single markdown document (saves to disk, chunks, embeds, stores, and syncs to Supabase).
-- `DELETE /api/documents/{source}` — delete a document by filename from disk, the vector store, and Supabase.
-- `GET /api/config` — fetch the current runtime configuration (app name, owner name, model choices, routing, etc.) from the combined file/Supabase config.
-- `PUT /api/config` — update and persist editable config fields back to `config.yaml`.
-- `POST /api/config/push` — one-time “force push” of the current in-memory config into Supabase so hosted environments start from the same defaults.
-- `GET /api/prompts` — list all managed system prompts with their current Supabase-backed content.
-- `PUT /api/prompts/{key}` — update a single prompt by key.
-- `POST /api/prompts/{key}/reset` — reset a prompt back to its hard-coded default template.
+- **LLM-first JD parsing**:
+  - Backend uses `extract_job_requirements()` (small “rewrite” model) to turn arbitrary job descriptions into JSON:
+    - `technical_requirements: string[]`
+    - `culture: string[]`
+    - `keywords: string[]`
+  - A simple heuristic extractor is kept only as a fallback.
+- **Tailored cover letters + guidance**:
+  - `POST /api/job/cover-letter`: generates a concise cover letter using RAG context + structured JD analysis.
+  - `POST /api/job/prepare`: runs the full flow once (cover letter, resume improvement suggestions, interview questions).
+  - `JobPrepResponse` returns the cover letter and the structured `technical_requirements`, `culture`, and `keywords`.
+- **Job-prep UI**:
+  - The Job Preparation page first shows **Job analysis** (requirements, culture bullets, keyword tags) and then the generated cover letter, so you can inspect the analysis before using the output.
 
-### User contact & handoff
+### 1.4 Knowledge management & admin UI
 
-When the model cannot answer a question:
+Admin panel (Next.js) with secure access via an admin key:
 
-- The chat backend returns a `no_info` flag from `/api/chat/stream`.
-- The frontend opens a contact form that collects the user’s name, email, and original question.
-- `POST /api/contact` sends an email to the configured recipient using SMTP credentials (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`) plus a recipient email configured via `ConfigLoader`.
+- **Knowledge base view**:
+  - Tree of ingested documents, quick stats, and links to inspect content.
+- **Document operations**:
+  - Add markdown documents via the admin UI → backend `/api/documents` (write file, chunk, embed, sync to Supabase).
+  - Delete documents via `/api/documents/{source}` (disk, vector store, and Supabase are all kept in sync).
+- **Config management**:
+  - `/api/config` + `/api/config/push` + `/api/config` `PUT` let you:
+    - View effective runtime config (models, flags, owner/app name, retrieval options).
+    - Push in-memory config back to Supabase.
+    - Update selected fields from the admin settings page.
+- **Prompt management**:
+  - All major system prompts are stored in a Supabase `prompts` table and surfaced in the Prompts admin screen:
+    - Core generator, reranker, evaluator, job-prep prompts…
+    - **Eval dataset generator prompt** (`EVAL_DATASET_GENERATOR_PROMPT`) used to synthesize test cases from your ingested knowledge.
 
-### Evaluation
+### 1.5 Evaluation & dataset management
 
-The backend includes a lightweight evaluation harness:
+#### 1.5.1 Eval runs
 
-- `POST /api/evaluate` — kicks off an async evaluation job over a fixed set of test questions, running both generation and retrieval evaluations.
-- `GET /api/evaluate/{job_id}` — poll the in-memory status/result of a specific job.
-- `GET /api/evaluate/latest` — fetch the last persisted evaluation result from Supabase (survives restarts).
-- Evaluation results are stored in an `eval_results` table in Supabase so you can build dashboards or compare runs over time.
+- **Backend APIs**:
+  - `POST /api/evaluate` — runs an async evaluation over the current test set:
+    - LLM answer quality (accuracy, relevance, completeness, confidence, score).
+    - Retrieval metrics (MRR, keyword coverage).
+  - `GET /api/evaluate/{job_id}` — poll job status.
+  - `GET /api/evaluate/latest` — fetch last completed result from Supabase (`eval_results` table).
+- **Admin eval UI** (`/admin/eval`):
+  - Run evaluation with a single button.
+  - Live status banner with elapsed time.
+  - Cards for:
+    - **LLM Evaluation** (scores + average feedback).
+    - **Retrieval Metrics** (MRR, keyword coverage).
+    - **Config at time of run** (frozen snapshot so you know which models/settings were used).
 
-### Health & observability
+#### 1.5.2 Evaluation dataset manager (Supabase-backed)
 
-- `GET /health` — simple health check for load balancers and uptime monitors.
-- `GET /` — returns a minimal JSON descriptor with service name and health URL.
-- Frontend proxy logs all `/api/chat/stream` requests with contextual tags in Vercel logs to help trace backend connectivity and timeout issues.
+The evaluation test set is now a first-class, Supabase-backed dataset, editable in the admin UI:
 
-### Tech stack
+- **Data model**:
+  - Supabase table `eval_dataset` (per-owner) with:
+    - `question: text`
+    - `ground_truth: text`
+    - `category: text`
+    - `keywords: jsonb` (string array)
+    - `owner_id`, timestamps, etc.
+- **Source-of-truth behavior**:
+  - `load_test_questions()` in the backend:
+    - Loads tests from `eval_dataset` for the current `owner_id`.
+    - If empty, seeds from `backend/evaluation/eval_data.jsonl` **once** and writes them into Supabase.
+    - Falls back to JSONL-only if Supabase is unavailable.
+- **Eval Dataset tab (admin)**:
+  - `/admin/eval` is split into two tabs:
+    - **Run evaluation**
+    - **Evaluation dataset**
+  - **Dataset table** with columns:
+    - `Question`
+    - `Ground truth`
+    - `Keywords`
+    - `Category`
+  - **Inline editing**:
+    - Textareas for `question` and `ground_truth`.
+    - Editable input for `category`.
+    - Comma-separated string for `keywords` (mapped to a string array).
+  - **Actions**:
+    - **Add row** (new row at the top).
+    - **Save changes** (writes the full table to Supabase via `PUT /api/eval/dataset`).
+    - **Clear** (with confirmation; clears Supabase and UI via `POST /api/eval/dataset/clear`).
+    - **Upload JSONL**:
+      - Client-side parse of `.jsonl`/`.txt` file into rows.
+      - Validates each line has `question` and `ground_truth`.
+      - Only updates the UI; nothing hits Supabase until you press **Save changes**.
+    - **Download JSONL**:
+      - `GET /api/eval/dataset/download` returns canonical JSONL:
+        - Each line is `{ "question", "ground_truth", "category", "keywords": [] }`.
+    - **AI generate**:
+      - Configurable **AI count** (default 20, min 1, max 200) sent as `n` to `/api/eval/dataset/generate`.
+      - Appends new test cases to the existing dataset.
+      - Shows a loader while generating and a message like `AI generated 20 test cases.` on success.
 
-- **Backend**: Python 3.12, FastAPI, Uvicorn, LangChain, Supabase vector store, RAGAS-style evaluation.
-- **Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS 4, Lucide icons.
-- **Storage & infra**: Supabase Postgres for documents, vector embeddings, and config; Vercel for the Next.js app; Railway/Render/Fly.io (or Docker) for the FastAPI backend.
+#### 1.5.3 AI-generated evaluation questions
 
-## 2. Deployment flow
+- **Backend logic**:
+  - `/api/eval/dataset/generate`:
+    - Samples documents from Supabase `document_chunks` (`content` + `metadata`).
+    - Builds a structured context with headers like `[project] LLM-Based Code Reviewer (2024)` followed by content.
+    - Passes this context into the Supabase-managed prompt `EVAL_DATASET_GENERATOR_PROMPT`.
+    - The LLM returns a JSON array of `{question, ground_truth, category, keywords[]}` objects.
+    - Validates and appends them to `eval_dataset` for the current `owner_id`.
+- **Prompt is configurable**:
+  - `EVAL_DATASET_GENERATOR_PROMPT` lives in `utils/prompts.py` and is registered in `prompt_manager`.
+  - You can edit it from the Prompts admin page to change style, categories, or difficulty of evaluation questions.
 
-For detailed provider-specific instructions, see `DEPLOYMENT.md`. Below is the high-level flow.
+### 1.6 User contact & handoff
+
+- When `no_info` is true from `/api/chat`:
+  - The frontend shows a contact form (name, email, question).
+  - `POST /api/contact` sends an email to the owner via SMTP using credentials and `RECIPIENT_EMAIL` from config.
+
+### 1.7 Health & observability
+
+- `GET /health` — simple health check.
+- `GET /` — minimal JSON descriptor with service name and health URL.
+- Frontend logs chat streaming calls with context to help debug connectivity/timeouts.
+
+### 1.8 Tech stack
+
+- **Backend**: Python 3.12, FastAPI, Uvicorn, LangChain, Supabase vector store, RAG evaluation tools.
+- **Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS, Lucide icons.
+- **Storage & infra**: Supabase Postgres (documents, chunks, eval datasets, prompts, config); Vercel (default) for frontend; Railway/Render/Fly.io/Docker for the backend.
+
+---
+
+## 2. Deployment
+
+For provider-specific details, see `DEPLOYMENT.md`. This section covers the overall flow.
 
 ### 2.1 Local development
 
-1. **Clone and install backend**
+1. **Backend: install dependencies**
 
    ```bash
    cd backend
    uv sync
    ```
 
-2. **Configure backend environment**
+2. **Backend: configure environment**
 
-   - Copy `backend/src/.env` and fill in:
-     - `SUPABASE_URL`, `SUPABASE_SECRET_KEY`.
-     - Model provider API keys (OpenAI, Anthropic, etc.) and any other secrets referenced by `config.yaml`.
-     - SMTP settings if you want the contact-form email handoff.
-   - Adjust `config.yaml` (data directory, models, app/owner name, etc.) as needed.
+   - Copy `backend/src/.env` and set:
+     - `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
+     - Model provider keys (e.g. OpenAI) used by `config.yaml`
+     - SMTP settings if you want email handoff:
+       - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`
+   - Adjust `backend/config.yaml`:
+     - `DATA_DIR` (where your markdown lives)
+     - Model names (`EMBEDDING_MODEL`, `GENERATOR_MODEL`, etc.)
+     - `frontend` section (`app_name`, `owner_name`)
 
-3. **Run backend**
+3. **Backend: run FastAPI**
 
    ```bash
    cd backend
    uv run uvicorn src.api_server:app --reload --host 0.0.0.0 --port 8000
    ```
 
-4. **Install and run frontend**
+4. **Frontend: install & run**
 
    ```bash
    cd frontend
@@ -100,51 +194,95 @@ For detailed provider-specific instructions, see `DEPLOYMENT.md`. Below is the h
    npm run dev
    ```
 
-5. Open `http://localhost:3000/chat` and chat with your digital twin.
+5. **Open the app**
 
-### 2.2 Backend deployment (Railway / Render / Fly.io)
+   - Chat: `http://localhost:3000/chat`
+   - Job preparation: `http://localhost:3000/job-preparation`
+   - Admin panel: `http://localhost:3000/admin` (requires admin key if configured)
 
-1. **Choose a backend host** that supports a long-running FastAPI server (Railway, Render, or Fly.io are tested options).
-2. **Set the project root to `backend/`** so that `pyproject.toml`, `uv.lock`, and `src/` are in the working directory.
-3. **Install dependencies**, for example:
-   - Railway with `requirements.txt`: `pip install -r requirements.txt`.
-   - Render/Fly.io: `uv sync`.
-4. **Start command** (adapt for each host):
+---
+
+### 2.2 Backend deployment (Railway / Render / Fly.io / Docker)
+
+1. **Project root**
+
+   - Set the deployment working directory to `backend/`.
+   - Ensure `pyproject.toml`, `uv.lock`, and `src/` are present.
+
+2. **Install dependencies**
+
+   Examples:
+   - Railway (pip): `pip install -r requirements.txt`
+   - Render/Fly.io: `uv sync`
+
+3. **Start command**
+
+   Most platforms can use:
 
    ```bash
    PYTHONPATH=.:src uvicorn src.api_server:app --host 0.0.0.0 --port $PORT
    ```
 
-   Some platforms (like Railway) expose `PORT`; others expect you to pick a fixed port such as `8080` and configure the service to route traffic to it.
+   If your host doesn’t provide `PORT`, choose one (e.g. `8080`) and configure the service to route traffic to it.
 
-5. **Configure environment variables on the host** (same values as your local `.env`, but set via the provider’s dashboard or secrets manager).
-6. **Verify health** by opening your backend URL at `/health` (e.g. `https://your-backend.example.com/health` should return `{"status":"ok"}`).
+4. **Environment variables**
 
-More detailed, provider-specific steps (including Railway’s target-port configuration, Render service settings, Fly.io Dockerfile, and a sample Dockerfile) are documented in `DEPLOYMENT.md`.
+   Set the same values as your local `.env` in the cloud provider:
+
+   - `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
+   - Model provider keys
+   - SMTP variables (optional but required for contact email)
+   - Any extra config keys referenced by `config.yaml`
+
+5. **Health check**
+
+   - Visit `/health` on your backend URL, e.g.:
+
+     ```text
+     https://your-backend.example.com/health
+     ```
+
+   - Expect `{"status": "ok"}`.
+
+---
 
 ### 2.3 Frontend deployment (Vercel)
 
-1. **Import the repo into Vercel** and set the project root to `frontend/`.
-2. Ensure the framework preset is **Next.js** and keep the default build/start commands.
-3. In the Vercel project settings, set:
+1. **Import project**
 
-   - `BACKEND_URL` (or `NEXT_PUBLIC_BACKEND_URL`) to your deployed backend base URL, **without** a trailing slash (e.g. `https://your-backend.example.com`).
+   - In Vercel, import the Git repo.
+   - Set the project root to `frontend/`.
+   - Framework preset: **Next.js** (App Router).
 
-4. Deploy the project; Vercel will provide a URL like `https://your-project.vercel.app`.
-5. In the backend, configure CORS origins (via config) to include your Vercel URL so the browser can call the API.
+2. **Configure environment**
 
-### 2.4 Operational checklist
+   - Set **one** of:
+     - `NEXT_PUBLIC_BACKEND_URL`
+     - `BACKEND_URL`
+   - Value: your backend base URL **without** trailing slash, e.g.:
 
-- Backend is deployed, `/health` returns `{"status":"ok"}`.
-- Backend environment variables (Supabase, model provider, SMTP) are correctly set in the hosting provider.
-- Supabase tables (`document_chunks`, `documents`, `eval_results`, and config/prompt tables) are created and reachable from the backend.
-- Frontend is deployed on Vercel with `BACKEND_URL` pointing at the backend.
-- CORS origins include both `http://localhost:3000` for local dev and your production Vercel URL.
-- Running `POST /api/ingest` succeeds and `GET /api/knowledge` returns non-empty documents.
+     ```text
+     https://your-backend.example.com
+     ```
 
-### 2.5 Supabase SQL initialization
+3. **Deploy**
 
-Create the core tables in Supabase (SQL editor → New query):
+   - Vercel builds and deploys automatically.
+   - You’ll get a URL like `https://mybestfriend-yourname.vercel.app`.
+
+4. **CORS**
+
+   - Ensure the backend CORS config includes:
+     - `http://localhost:3000` (for local dev)
+     - Your Vercel URL (e.g. `https://mybestfriend-yourname.vercel.app`)
+
+---
+
+### 2.4 Supabase setup
+
+Use the Supabase SQL editor to create the core tables.
+
+#### 2.4.1 Vector store, documents, config, prompts, eval results
 
 ```sql
 -- Vector chunks used by SupabaseVectorStore
@@ -186,3 +324,37 @@ create table if not exists public.eval_results (
   result jsonb
 );
 ```
+
+#### 2.4.2 Evaluation dataset table
+
+```sql
+create table if not exists public.eval_dataset (
+  id uuid primary key default gen_random_uuid(),
+  owner_id text not null default 'default',
+  question text not null,
+  ground_truth text not null,
+  category text not null default 'general',
+  keywords jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_eval_dataset_owner_id
+  on public.eval_dataset (owner_id);
+```
+
+(If you don’t already have an `updated_at` trigger function, you can omit the trigger or add one later.)
+
+---
+
+### 2.5 Operational checklist
+
+- Backend deployed, `/health` returns `{"status":"ok"}`.
+- Supabase tables exist and are reachable: `document_chunks`, `documents`, `app_config`, `prompts`, `eval_results`, `eval_dataset`.
+- `POST /api/ingest` completes successfully and `GET /api/knowledge` returns non-empty data.
+- Frontend deployed on Vercel with `BACKEND_URL` pointing to the backend.
+- CORS configured correctly on the backend.
+- Admin panel reachable; prompts, settings, and evaluation dataset manager all work:
+  - You can see/edit prompts.
+  - You can edit the evaluation dataset table, upload/download JSONL, and run AI generation.
+  - Evaluations run and visualize successfully on `/admin/eval`.
