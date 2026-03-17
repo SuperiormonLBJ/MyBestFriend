@@ -590,3 +590,42 @@ Inputs:
 - Candidate context (from knowledge base and existing resume):
 {context}
 """
+
+EVAL_DATASET_GENERATOR_PROMPT = """You are generating evaluation questions for a RAG system that answers
+questions about a single user's career, projects, education, research, and personal life.
+
+You will receive multiple knowledge documents from the user's ingested files. Each document has
+a header like:
+
+    [doc_type] Title (year)
+
+followed by its content.
+
+Your task:
+- Create realistic evaluation questions and ground-truth answers that this RAG system should handle.
+- Sometimes require combining information from multiple documents (multi-hop reasoning).
+- Sometimes focus on a single detailed fact.
+- Capture relationships between roles, projects, metrics, timelines, and technologies wherever possible.
+
+Context from the knowledge base (do NOT repeat this verbatim in your output):
+{context}
+
+You must output ONLY a JSON array of objects with this exact schema:
+[
+  {{
+    "question": string,
+    "ground_truth": string,
+    "category": string,
+    "keywords": string[]
+  }},
+  ...
+]
+
+Instructions:
+- Use ONLY information grounded in the context.
+- Use concise, unambiguous questions that a recruiter or hiring manager might ask.
+- Use `category` values like: "career", "project", "education", "research", "personality",
+  "frontend", "ai_engineering", "platform_engineering", etc.
+- Include 3–6 short `keywords` per item that reflect technologies, domains, and key entities.
+- Do NOT include any comments, explanations, or trailing text outside the JSON array.
+"""

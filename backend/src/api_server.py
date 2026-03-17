@@ -35,6 +35,14 @@ import traceback as _traceback
 # Pre-import eval in the main thread so its module-level code (ConfigLoader, ChatOpenAI init)
 # runs here, never inside a background thread where the shared Supabase client is not safe.
 from .eval import load_test_questions, evaluate_LLM, evaluate_all
+from .eval_dataset_store import (
+    load_eval_rows_from_supabase,
+    save_eval_rows_to_supabase,
+    clear_eval_rows,
+    _row_to_test_question,
+)
+from utils.base_models import TestQuestion
+from utils.prompt_manager import get_prompt
 
 config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
@@ -655,6 +663,90 @@ def api_get_latest_evaluation():
     return data
 
 
+@app.get("/api/eval/dataset")
+def api_get_eval_dataset():
+    """Return all eval dataset rows for the current owner."""
+    tests = load_eval_rows_from_supabase()
+    return [
+        {
+            "question": t.question,
+            "ground_truth": t.ground_truth,
+            "category": t.category,
+            "keywords": t.keywords,
+        }
+        for t in tests
+    ]
+
+
+class EvalDatasetUpdateRequest(BaseModel):
+    items: list[dict]
+
+
+@app.put("/api/eval/dataset", dependencies=[AdminAuth])
+def api_put_eval_dataset(request: EvalDatasetUpdateRequest):
+    """Replace the eval dataset with the provided items."""
+    tests: list = []
+    for item in request.items:
+        tests.append(_row_to_test_question(item))
+    save_eval_rows_to_supabase(tests, replace=True)
+    return {"count": len(tests)}
+
+
+@app.post("/api/eval/dataset/clear", dependencies=[AdminAuth])
+def api_clear_eval_dataset():
+    """Clear all eval dataset rows for the current owner."""
+    clear_eval_rows()
+    return {"status": "cleared"}
+
+
+class EvalDatasetUploadRequest(BaseModel):
+    fileText: str
+
+
+@app.post("/api/eval/dataset/upload", dependencies=[AdminAuth])
+def api_upload_eval_dataset(request: EvalDatasetUploadRequest):
+    """Upload a JSONL file content and replace the eval dataset."""
+    lines = request.fileText.splitlines()
+    tests: list[TestQuestion] = []
+    for idx, line in enumerate(lines, start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON on line {idx}")
+        try:
+            tests.append(_row_to_test_question(data))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid record on line {idx}: {e}")
+
+    save_eval_rows_to_supabase(tests, replace=True)
+    return {"count": len(tests)}
+
+
+@app.get("/api/eval/dataset/download")
+def api_download_eval_dataset():
+    """Download the current eval dataset as JSONL."""
+    tests = load_eval_rows_from_supabase()
+
+    def iter_lines():
+        for t in tests:
+            obj = {
+                "question": t.question,
+                "ground_truth": t.ground_truth,
+                "category": t.category,
+                "keywords": t.keywords or [],
+            }
+            yield json.dumps(obj, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        iter_lines(),
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="eval_data.jsonl"'},
+    )
+
+
 @app.get("/api/evaluate/{job_id}")
 def api_get_evaluation(job_id: str):
     """Poll the status/result of an evaluation job."""
@@ -662,3 +754,94 @@ def api_get_evaluation(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+class EvalGenerateRequest(BaseModel):
+    n: int | None = None
+    mode: str | None = "replace"
+
+
+@app.post("/api/eval/dataset/generate", dependencies=[AdminAuth])
+def api_generate_eval_dataset(request: EvalGenerateRequest):
+    """AI-generate eval dataset rows based on existing knowledge documents."""
+    n = request.n or 20
+    mode = (request.mode or "replace").lower()
+    if mode not in ("replace", "append"):
+        mode = "replace"
+
+    try:
+        # Sample chunks from the full RAG knowledge base
+        resp = (
+            supabase_client.table("document_chunks")
+            .select("content, metadata")
+            .limit(60)
+            .execute()
+        )
+        rows = resp.data or []
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Failed to load knowledge context: {e}")
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No knowledge context available to generate eval data.")
+
+    parts: list[str] = []
+    for row in rows:
+        meta = row.get("metadata") or {}
+        doc_type = meta.get("doc_type", "misc")
+        title = meta.get("title") or meta.get("source") or "Untitled"
+        year = meta.get("year")
+        header = f"[{doc_type}] {title}"
+        if year:
+            header += f" ({year})"
+        content = row.get("content", "")
+        parts.append(f"{header}\n{content}")
+    context = "\n\n---\n\n".join(parts)
+
+    base_prompt = get_prompt("EVAL_DATASET_GENERATOR_PROMPT")
+    system_text = base_prompt.format(context=context[:12000])
+
+    llm = ChatOpenAI(model=config.get_generator_model())
+    response = llm.invoke(
+        [
+            SystemMessage(content=system_text),
+            HumanMessage(content="Generate the evaluation dataset JSON now."),
+        ]
+    )
+    raw = (response.content or "").strip()
+
+    # Best-effort: strip surrounding fences
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model returned invalid JSON: {e}")
+
+    if not isinstance(data, list):
+        raise HTTPException(status_code=500, detail="Model output must be a JSON array.")
+
+    tests: list[TestQuestion] = []
+    for idx, item in enumerate(data, start=1):
+        if not isinstance(item, dict):
+            continue
+        try:
+            tests.append(_row_to_test_question(item))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Invalid item at index {idx}: {e}")
+
+    if not tests:
+        raise HTTPException(status_code=500, detail="No valid eval rows generated.")
+
+    replace = mode == "replace"
+    if not replace:
+        existing = load_eval_rows_from_supabase()
+        tests = existing + tests
+
+    save_eval_rows_to_supabase(tests, replace=True)
+    return {"status": "ok", "count": len(tests), "mode": mode}

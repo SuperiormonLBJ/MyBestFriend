@@ -29,19 +29,17 @@ from src.rag_ingestion import embeddings
 
 config = ConfigLoader()
 llm = ChatOpenAI(model=config.get_evaluator_model())
-project_root = Path(__file__).parent.parent
-TEST_QUESTIONS_FILE_PATH = str((project_root / "evaluation/eval_data.jsonl").resolve())
+from .eval_dataset_store import ensure_seed_from_jsonl_if_empty, load_eval_rows_from_supabase
 
 def load_test_questions() -> list[TestQuestion]:
     """
     Load test questions from a JSONL file
     """
-    with open(TEST_QUESTIONS_FILE_PATH, "r", encoding="utf-8") as f:
-        tests = []
-        for line in f:
-            data = json.loads(line.strip()) 
-            tests.append(TestQuestion(**data))
-    return tests
+    tests = load_eval_rows_from_supabase()
+    if tests:
+        return tests
+    # Fallback: seed Supabase from JSONL (if present) and return those rows.
+    return ensure_seed_from_jsonl_if_empty()
 
 def evaluate_response(test_question: TestQuestion) -> RetrievalLLMEval:
     """

@@ -29,6 +29,7 @@ from utils.prompts import (
     COVER_LETTER_PROMPT,
     RESUME_SUGGESTIONS_PROMPT,
     INTERVIEW_QUESTIONS_PROMPT,
+    EVAL_DATASET_GENERATOR_PROMPT,
 )
 
 # Registry of all managed prompts: key → {content, description}
@@ -80,6 +81,10 @@ _DEFAULTS: dict[str, dict] = {
     "INTERVIEW_QUESTIONS_PROMPT": {
         "content": INTERVIEW_QUESTIONS_PROMPT,
         "description": "Job Preparation: generates interview questions and grounded answer guidance from job description and RAG context.",
+    },
+    "EVAL_DATASET_GENERATOR_PROMPT": {
+        "content": EVAL_DATASET_GENERATOR_PROMPT,
+        "description": "Generates RAG evaluation questions/answers from the ingested knowledge base. Placeholder: {context}.",
     },
 }
 
