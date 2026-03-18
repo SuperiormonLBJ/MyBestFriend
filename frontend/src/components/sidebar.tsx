@@ -35,12 +35,20 @@ export function Sidebar() {
         style={{ boxShadow: "2px 0 0 var(--border)" }}
       >
       <div
-        className="flex h-16 items-center gap-2 border-b-2 border-[var(--border)] px-4 bg-[var(--primary)] header-texture"
+        className="flex h-16 items-center justify-between gap-2 border-b-2 border-[var(--border)] px-4 bg-[var(--primary)] header-texture"
         style={{ boxShadow: "0 3px 0 var(--border)" }}
       >
         <h1 className="font-heading text-2xl text-[#000000] tracking-wide uppercase">
           {config.app_name}
         </h1>
+        <a
+          href="https://portfolio-beiji.vercel.app/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-body text-xs font-semibold uppercase tracking-widest text-[#000000]/70 hover:text-[#000000]" // changed
+        >
+          Portfolio
+        </a>
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-3">
         {navItems.map(({ href, label, icon: Icon }) => {

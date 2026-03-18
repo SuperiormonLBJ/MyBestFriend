@@ -265,7 +265,16 @@ export default function ChatPage() {
               />
             </p>
           </div>
-          <div className="flex shrink-0">
+          <div className="flex shrink-0 items-center gap-3">
+            <a
+              href="https://portfolio-beiji.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 border-2 border-[#000000] px-3 py-2 font-heading text-sm uppercase tracking-wide text-[#000000] transition-colors duration-150 hover:bg-[#000000] hover:text-[var(--primary)] cursor-pointer" // changed
+              style={{ boxShadow: "3px 3px 0 0 rgba(0,0,0,0.35)" }}
+            >
+              Portfolio
+            </a>
             <button
               type="button"
               onClick={handleNewChat}
