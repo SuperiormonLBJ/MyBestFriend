@@ -5,9 +5,15 @@ import { Lock, Eye, EyeOff } from "lucide-react";
 
 type Props = {
   onSuccess: (key: string) => void;
+  variant?: "fullscreen" | "overlay";
+  onCancel?: () => void;
 };
 
-export default function AdminLoginModal({ onSuccess }: Props) {
+export default function AdminLoginModal({
+  onSuccess,
+  variant = "fullscreen",
+  onCancel,
+}: Props) {
   const [key, setKey] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
@@ -35,9 +41,23 @@ export default function AdminLoginModal({ onSuccess }: Props) {
     }
   };
 
+  const shellCls =
+    variant === "overlay"
+      ? "fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      : "flex h-screen w-full items-center justify-center bg-[var(--surface)]";
+
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-[var(--surface)]">
-      <div className="w-full max-w-sm rounded-2xl border-2 border-[var(--border)] bg-[var(--background)] p-8 shadow-sm">
+    <div className={shellCls}>
+      <div className="relative w-full max-w-sm rounded-2xl border-2 border-[var(--border)] bg-[var(--background)] p-8 shadow-sm">
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="absolute right-4 top-4 text-sm font-medium text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+          >
+            Cancel
+          </button>
+        ) : null}
         <div className="mb-6 flex flex-col items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--primary)] bg-[var(--primary)]/10">
             <Lock className="h-5 w-5 text-[var(--primary)]" />
@@ -47,7 +67,7 @@ export default function AdminLoginModal({ onSuccess }: Props) {
               Admin Access
             </h1>
             <p className="mt-1 text-sm text-[var(--foreground-muted)]">
-              Enter your admin API key to continue
+              Enter your admin API key to save changes
             </p>
           </div>
         </div>
@@ -76,7 +96,7 @@ export default function AdminLoginModal({ onSuccess }: Props) {
 
           <button
             type="submit"
-            disabled={loading || !key}
+            disabled={loading || (!key && variant === "fullscreen")}
             className="w-full rounded-lg bg-[var(--primary)] py-2.5 font-body text-sm font-bold text-[#000000] transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {loading ? "Verifying…" : "Sign in"}

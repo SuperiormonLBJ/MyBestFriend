@@ -16,6 +16,7 @@ import {
 import { useState, useEffect } from "react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { SectionCard } from "@/components/ui/section-card";
+import { useAdminWrite } from "@/contexts/admin-write-context";
 import { getStoredAdminKey } from "@/lib/session-auth";
 
 const EMBEDDING_MODELS = [
@@ -82,6 +83,7 @@ const selectCls =
   "w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-colors cursor-pointer";
 
 export default function SettingsPage() {
+  const { ensureCanModify } = useAdminWrite();
   const { config, isLoading, refetch } = useConfig();
   const [form, setForm] = useState<FullConfig>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -98,6 +100,7 @@ export default function SettingsPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const handleSave = async () => {
+    if (!(await ensureCanModify())) return;
     setSaving(true);
     setMessage(null);
     try {

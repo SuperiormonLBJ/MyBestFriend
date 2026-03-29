@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getStoredAdminKey } from "@/lib/session-auth";
 import { AdminPageHeader } from "@/components/admin-page-header";
+import { useAdminWrite } from "@/contexts/admin-write-context";
 import {
   ChevronRight,
   ChevronDown,
@@ -362,6 +363,7 @@ function TreeDocument({
 }
 
 export default function KnowledgePage() {
+  const { ensureCanModify } = useAdminWrite();
   const [data, setData] = useState<TreeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -420,7 +422,8 @@ export default function KnowledgePage() {
     fetchTree();
   }, []);
 
-  const handleDelete = (source: string, docType: string) => {
+  const handleDelete = async (source: string, docType: string) => {
+    if (!(await ensureCanModify())) return;
     setConfirmDialog({
       title: "Delete document",
       message: `Delete "${source}" and all its chunks? This cannot be undone.`,
@@ -448,6 +451,7 @@ export default function KnowledgePage() {
   };
 
   const handleRestructure = async () => {
+    if (!(await ensureCanModify())) return;
     if (!addForm.rawText.trim()) return;
     setRestructureLoading(true);
     setMessage(null);
@@ -477,6 +481,7 @@ export default function KnowledgePage() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!(await ensureCanModify())) return;
     if (!addForm.filename.trim() || !addForm.content.trim()) return;
     setAdding(true);
     setMessage(null);
@@ -505,7 +510,8 @@ export default function KnowledgePage() {
     }
   };
 
-  const handleReingest = () => {
+  const handleReingest = async () => {
+    if (!(await ensureCanModify())) return;
     setConfirmDialog({
       title: "Re-ingest all documents",
       message: "This will replace the current vector store with freshly ingested documents from the data folder. Continue?",

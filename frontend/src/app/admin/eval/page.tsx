@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getStoredAdminKey, ADMIN_SESSION_KEY } from "@/lib/session-auth";
+import { getStoredAdminKey } from "@/lib/session-auth";
 import { AdminPageHeader } from "@/components/admin-page-header";
+import { useAdminWrite } from "@/contexts/admin-write-context";
 import { SectionCard } from "@/components/ui/section-card";
 import {
   Play,
@@ -145,6 +146,7 @@ function ScoreBadge({ value, max }: { value: number; max: number }) {
 // Page
 // ---------------------------------------------------------------------------
 export default function EvalPage() {
+  const { ensureCanModify, markWriteUnauthenticated } = useAdminWrite();
   const [job, setJob] = useState<Job>({ status: "idle" });
   const [jobId, setJobId] = useState<string | null>(null);
   const [ticker, setTicker] = useState(0); // used for elapsed-time re-render
@@ -267,6 +269,7 @@ export default function EvalPage() {
   };
 
   const handleSaveDataset = async () => {
+    if (!(await ensureCanModify())) return;
     try {
       const res = await fetch("/api/eval/dataset", {
         method: "PUT",
@@ -277,9 +280,8 @@ export default function EvalPage() {
         body: JSON.stringify({ items: dataset }),
       });
       if (res.status === 401) {
-        sessionStorage.removeItem(ADMIN_SESSION_KEY);
-        window.location.href = "/admin";
-        return;
+        markWriteUnauthenticated();
+        throw new Error("Admin key required or invalid.");
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -294,6 +296,7 @@ export default function EvalPage() {
   };
 
   const handleClearDataset = async () => {
+    if (!(await ensureCanModify())) return;
     const confirmed = window.confirm(
       "This will clear all evaluation test data from Supabase, not just the UI. Continue?"
     );
@@ -305,9 +308,8 @@ export default function EvalPage() {
         headers: { "X-Admin-Key": getStoredAdminKey() },
       });
       if (res.status === 401) {
-        sessionStorage.removeItem(ADMIN_SESSION_KEY);
-        window.location.href = "/admin";
-        return;
+        markWriteUnauthenticated();
+        throw new Error("Admin key required or invalid.");
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -412,6 +414,7 @@ export default function EvalPage() {
   };
 
   const handleGenerateAi = async () => {
+    if (!(await ensureCanModify())) return;
     try {
       setGenerating(true);
       setDatasetError(null);
@@ -425,9 +428,8 @@ export default function EvalPage() {
         body: JSON.stringify({ n: generateCount, mode: "append" }),
       });
       if (res.status === 401) {
-        sessionStorage.removeItem(ADMIN_SESSION_KEY);
-        window.location.href = "/admin";
-        return;
+        markWriteUnauthenticated();
+        throw new Error("Admin key required or invalid.");
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -451,6 +453,7 @@ export default function EvalPage() {
   };
 
   const handleRun = async () => {
+    if (!(await ensureCanModify())) return;
     if (pollRef.current) clearTimeout(pollRef.current);
     setJob({ status: "running", started_at: Date.now() / 1000 });
     setJobId(null);
@@ -460,8 +463,11 @@ export default function EvalPage() {
         headers: { "X-Admin-Key": getStoredAdminKey() },
       });
       if (res.status === 401) {
-        sessionStorage.removeItem(ADMIN_SESSION_KEY);
-        window.location.href = "/admin";
+        markWriteUnauthenticated();
+        setJob({
+          status: "error",
+          error: "Admin key required or invalid.",
+        });
         return;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

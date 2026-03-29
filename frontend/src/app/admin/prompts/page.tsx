@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { AdminPageHeader } from "@/components/admin-page-header";
+import { useAdminWrite } from "@/contexts/admin-write-context";
 import { getStoredAdminKey } from "@/lib/session-auth";
 
 type Prompt = {
@@ -36,6 +37,7 @@ const KEY_LABELS: Record<string, string> = {
 };
 
 export default function PromptsPage() {
+  const { ensureCanModify } = useAdminWrite();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [states, setStates] = useState<Record<string, PromptState>>({});
   const [loading, setLoading] = useState(true);
@@ -88,6 +90,7 @@ export default function PromptsPage() {
     setStates((prev) => ({ ...prev, [key]: { ...prev[key], message } }));
 
   const handleSave = async (key: string) => {
+    if (!(await ensureCanModify())) return;
     const draft = states[key]?.draft;
     if (!draft?.trim()) return;
     setStates((prev) => ({ ...prev, [key]: { ...prev[key], saving: true, message: null } }));
@@ -113,6 +116,7 @@ export default function PromptsPage() {
   };
 
   const handleReset = async (key: string) => {
+    if (!(await ensureCanModify())) return;
     setStates((prev) => ({
       ...prev,
       [key]: { ...prev[key], resetting: true, message: null },
