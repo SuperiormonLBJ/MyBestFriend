@@ -2,6 +2,52 @@
 
 MyBestFriend is a production-grade *personal digital twin*: a RAG chatbot and admin console that answers questions about a single person (the “owner”) using only curated, versioned documents. It runs as a FastAPI backend, a Next.js frontend, and a Supabase-backed Postgres + vector store.
 
+## Frontend showcase
+
+Next.js UI: sidebar (Chatbot, Job Preparation, Admin), dark theme, quick prompts and streaming chat, job-description prep, and admin tools for knowledge, settings, prompts, and eval. Screenshots live under `frontend/docs/screenshots/` (paths below are repo-root–relative for GitHub and editor preview).
+
+### Chatbot
+
+Ethereal-style background, quick prompts, prompt box with optional voice (Web Speech API in supported browsers).
+
+![Chatbot](/frontend/docs/screenshots/chat.png)
+
+### Job preparation
+
+Paste a job description, optional cover-letter word limit, then switch between cover letter, resume suggestions, and interview questions.
+
+![Job preparation](/frontend/docs/screenshots/job-preparation.png)
+
+### Admin — hub
+
+Entry points for Knowledge Base, Settings, Prompts, and Eval.
+
+![Admin hub](/frontend/docs/screenshots/admin.png)
+
+### Admin — Knowledge Base
+
+Inspect and manage documents in the vector store (with backend support for add/delete).
+
+![Admin knowledge](/frontend/docs/screenshots/admin-knowledge.png)
+
+### Admin — Settings
+
+Runtime display and model-related options from config.
+
+![Admin settings](/frontend/docs/screenshots/admin-settings.png)
+
+### Admin — Prompts
+
+Edit Supabase-backed LLM system prompts.
+
+![Admin prompts](/frontend/docs/screenshots/admin-prompts.png)
+
+### Admin — Eval
+
+Run retrieval and LLM quality evaluation against the configured dataset.
+
+![Admin eval](/frontend/docs/screenshots/admin-eval.png)
+
 ---
 
 ## 1. Core features
@@ -9,7 +55,7 @@ MyBestFriend is a production-grade *personal digital twin*: a RAG chatbot and ad
 ### 1.1 Chat experience
 
 - **Owner-centric Q&A**: Answers questions about the owner (career, projects, education, hobbies, personality) using only ingested markdown documents.
-- **Streaming UI**: Next.js 16 + React 19 chat interface with token streaming, desktop/mobile friendly.
+- **Streaming UI**: Next.js 16 + React 19 chat interface with token streaming, desktop/mobile friendly, source citations, and optional **voice input** (Web Speech API where available; otherwise a fallback message).
 - **Unknown-answer handling**: If the RAG stack can’t confidently answer, the backend sets `no_info` and the UI shows a dedicated fallback state plus a contact form.
 - **Local history**: Conversation history is persisted in `localStorage` so refreshes don’t lose the thread.
 
@@ -149,7 +195,7 @@ The evaluation test set is now a first-class, Supabase-backed dataset, editable 
 ### 1.8 Tech stack
 
 - **Backend**: Python 3.12, FastAPI, Uvicorn, LangChain, Supabase vector store, RAG evaluation tools.
-- **Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS, Lucide icons.
+- **Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS v4, Lucide icons, Caveat + Quicksand typography (indigo-forward UI).
 - **Storage & infra**: Supabase Postgres (documents, chunks, eval datasets, prompts, config); Vercel (default) for frontend; Railway/Render/Fly.io/Docker for the backend.
 
 ---
@@ -193,6 +239,10 @@ For provider-specific details, see `DEPLOYMENT.md`. This section covers the over
    npm install
    npm run dev
    ```
+
+   Point the UI at your API: set `BACKEND_URL` or `NEXT_PUBLIC_BACKEND_URL` in `frontend/.env.local` if the backend is not `http://127.0.0.1:8000`.
+
+   **Regenerate showcase screenshots** (optional): with the dev server on port 3000, run `npm run playwright:install` once, then `npm run screenshots`. PNGs are written to `frontend/docs/screenshots/`.
 
 5. **Open the app**
 
