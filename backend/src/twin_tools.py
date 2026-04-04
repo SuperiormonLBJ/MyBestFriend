@@ -79,6 +79,42 @@ def get_knowledge_scope() -> dict:
         return {"doc_types": {}, "year_range": None}
 
 
+DOMAIN_DOC_TYPE_MAP: dict[str, str] = {
+    "projects": "project",
+    "jobs": "career",
+    "skills": "cv",
+    "education": "education",
+    "hobbies": "personal",
+    "personal": "personal",
+}
+
+
+def list_domain_items(domain: str) -> list[dict]:
+    """
+    Return a sorted list of items (title + year) for the given domain.
+    Generalised version of list_projects() that works for any doc_type.
+    domain: one of 'projects', 'jobs', 'skills', 'education', 'hobbies', 'personal'
+    """
+    doc_type = DOMAIN_DOC_TYPE_MAP.get(domain, domain)
+    try:
+        resp = (
+            supabase_client.table("document_chunks")
+            .select("metadata")
+            .filter("metadata->>doc_type", "eq", doc_type)
+            .execute()
+        )
+        seen: dict = {}
+        for row in (resp.data or []):
+            meta = row.get("metadata") or {}
+            title = meta.get("title") or meta.get("source", "").replace(".md", "")
+            year = str(meta.get("year", ""))
+            if title and title not in seen:
+                seen[title] = {"title": title, "year": year, "doc_type": doc_type}
+        return sorted(seen.values(), key=lambda x: (x["year"], x["title"]), reverse=True)
+    except Exception:
+        return []
+
+
 def generate_bio(context: str, style: str = "professional") -> str:
     """
     Generate a short bio from provided context text.

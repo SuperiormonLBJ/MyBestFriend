@@ -173,6 +173,25 @@ class ConfigLoader:
     def get_use_graph(self) -> bool:
         return bool(self.config.get('USE_GRAPH', False))
 
+    def get_use_multi_agent(self) -> bool:
+        return bool(self.config.get('USE_MULTI_AGENT', False))
+
+    def get_multi_agent_token_budget(self) -> int:
+        val = self.config.get('MULTI_AGENT_TOKEN_BUDGET', 6000)
+        try:
+            return max(1000, int(val))
+        except (TypeError, ValueError):
+            return 6000
+
+    def get_multi_agent_parallel(self) -> bool:
+        return bool(self.config.get('MULTI_AGENT_PARALLEL', True))
+
+    def get_multi_agent_log_traces(self) -> bool:
+        return bool(self.config.get('MULTI_AGENT_LOG_TRACES', True))
+
+    def get_hitl_enabled(self) -> bool:
+        return bool(self.config.get('HITL_ENABLED', False))
+
     def get_admin_api_key(self) -> str:
         return str(self.config.get('ADMIN_API_KEY', ''))
 
@@ -218,6 +237,11 @@ class ConfigLoader:
             "self_check_enabled": self.get_self_check_enabled(),
             "multi_step_enabled": self.get_multi_step_enabled(),
             "use_graph": self.get_use_graph(),
+            "use_multi_agent": self.get_use_multi_agent(),
+            "multi_agent_token_budget": self.get_multi_agent_token_budget(),
+            "multi_agent_parallel": self.get_multi_agent_parallel(),
+            "multi_agent_log_traces": self.get_multi_agent_log_traces(),
+            "hitl_enabled": self.get_hitl_enabled(),
         }
 
     def get_full_config(self) -> dict:
@@ -256,6 +280,11 @@ class ConfigLoader:
             "multi_step_enabled": "MULTI_STEP_ENABLED",
             "use_graph": "USE_GRAPH",
             "admin_api_key": "ADMIN_API_KEY",
+            "use_multi_agent": "USE_MULTI_AGENT",
+            "multi_agent_token_budget": "MULTI_AGENT_TOKEN_BUDGET",
+            "multi_agent_parallel": "MULTI_AGENT_PARALLEL",
+            "multi_agent_log_traces": "MULTI_AGENT_LOG_TRACES",
+            "hitl_enabled": "HITL_ENABLED",
         }
 
         frontend_updates: dict = {}

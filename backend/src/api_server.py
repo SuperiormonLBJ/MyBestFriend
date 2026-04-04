@@ -92,6 +92,8 @@ def verify_admin_key(request: VerifyKeyRequest):
 class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] = []
+    thread_id: str | None = None   # for LangGraph checkpointing / HITL
+    mode: str | None = None        # override flags: "multi_agent", "graph", "direct"
 
 
 class ChatResponse(BaseModel):
@@ -154,9 +156,26 @@ def _prepare_job_context(job_description: str, word_limit_override: int | None =
     }
 
 
+def _resolve_mode(request: ChatRequest) -> str:
+    """Determine execution mode: multi_agent > graph > direct (in priority order)."""
+    if request.mode:
+        return request.mode
+    if config.get_use_multi_agent():
+        return "multi_agent"
+    if config.get_use_graph():
+        return "graph"
+    return "direct"
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    if config.get_use_graph():
+    mode = _resolve_mode(request)
+    if mode == "multi_agent":
+        from src.multi_agent_graph import run_multi_agent_graph
+        answer, _, no_info, sources = run_multi_agent_graph(
+            request.message, request.history, thread_id=request.thread_id
+        )
+    elif mode == "graph":
         from src.conversation_graph import run_graph
         answer, _, no_info, sources = run_graph(request.message, request.history)
     else:
@@ -166,8 +185,17 @@ def chat(request: ChatRequest):
 
 @app.post("/api/chat/stream")
 def chat_stream(request: ChatRequest):
+    mode = _resolve_mode(request)
+
     def event_stream():
-        for event in generate_answer_stream(request.message, request.history):
+        if mode == "multi_agent":
+            from src.multi_agent_graph import run_multi_agent_graph_stream
+            gen = run_multi_agent_graph_stream(
+                request.message, request.history, thread_id=request.thread_id
+            )
+        else:
+            gen = generate_answer_stream(request.message, request.history)
+        for event in gen:
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
@@ -845,3 +873,111 @@ def api_generate_eval_dataset(request: EvalGenerateRequest):
 
     save_eval_rows_to_supabase(tests, replace=True)
     return {"status": "ok", "count": len(tests), "mode": mode}
+
+
+# ---------------------------------------------------------------------------
+# Multi-agent endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/agent/graph")
+def api_agent_graph():
+    """Return the multi-agent graph topology as JSON. Useful for visualisation and demos."""
+    from src.multi_agent_graph import get_graph_topology
+    return get_graph_topology()
+
+
+@app.get("/api/agent/trace/{run_id}")
+def api_agent_trace(run_id: str):
+    """Retrieve the full agent trace for a given run_id from agent_run_traces."""
+    try:
+        result = supabase_client.table("agent_run_traces").select("*").eq("run_id", run_id).execute()
+        rows = result.data or []
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No trace found for run_id={run_id}")
+        return rows[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/agent/pending-reviews")
+def api_agent_pending_reviews(_: None = AdminAuth):
+    """List agent graph runs that have requested human-in-the-loop review."""
+    try:
+        result = (
+            supabase_client.table("agent_run_traces")
+            .select("run_id, thread_id, query, created_at")
+            .execute()
+        )
+        # In a real HITL setup, interrupted runs would have a `status=pending_review` column.
+        # For now, return all recent traces as a demonstration.
+        rows = result.data or []
+        return {"pending": rows[:20]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agent/resume/{thread_id}")
+def api_agent_resume(thread_id: str, body: dict, _: None = AdminAuth):
+    """
+    Resume a paused (HITL-interrupted) graph run from its checkpoint.
+    Body: {approved: bool, modified_answer: str | None}
+    """
+    approved = body.get("approved", True)
+    if not approved:
+        return {"status": "rejected", "thread_id": thread_id}
+
+    if not config.get_hitl_enabled():
+        raise HTTPException(status_code=400, detail="HITL is not enabled (HITL_ENABLED=false)")
+
+    try:
+        from src.multi_agent_graph import get_multi_agent_graph_with_checkpointing
+        g = get_multi_agent_graph_with_checkpointing()
+        # Resume from checkpoint by invoking with None input and the thread_id config
+        result = g.invoke(None, config={"configurable": {"thread_id": thread_id}})
+        return {
+            "status": "resumed",
+            "thread_id": thread_id,
+            "answer": result.get("answer", ""),
+            "no_info": result.get("no_info", True),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resume failed: {e}")
+
+
+@app.post("/api/evaluate/multi-agent")
+def api_evaluate_multi_agent(_: None = AdminAuth):
+    """
+    Trigger a background multi-agent evaluation job.
+    Returns a job_id immediately; poll GET /api/evaluate/{job_id} for results.
+    Multi-agent eval runs the graph with USE_MULTI_AGENT=true and measures:
+    - Agent Routing Accuracy (ARA)
+    - Agent Context Redundancy Ratio (ACRR)
+    - Per-agent MRR
+    - Synthesis faithfulness
+    """
+    job_id = str(uuid.uuid4())
+
+    def _run_eval():
+        try:
+            from src.multi_agent_eval import evaluate_multi_agent_all
+            tests = load_test_questions()
+            if not tests:
+                _eval_results[job_id] = {"status": "error", "error": "No test questions found"}
+                return
+            report = evaluate_multi_agent_all(tests)
+            _eval_results[job_id] = {
+                "status": "done",
+                "result": report.model_dump(),
+            }
+        except Exception as e:
+            _eval_results[job_id] = {"status": "error", "error": str(e)}
+
+    _eval_results[job_id] = {"status": "running"}
+    threading.Thread(target=_run_eval, daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
+
+
+# In-memory eval job store (shared with existing /api/evaluate polling)
+_eval_results: dict = {}

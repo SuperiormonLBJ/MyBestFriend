@@ -30,6 +30,15 @@ from utils.prompts import (
     RESUME_SUGGESTIONS_PROMPT,
     INTERVIEW_QUESTIONS_PROMPT,
     EVAL_DATASET_GENERATOR_PROMPT,
+    # Multi-agent prompts
+    INTENT_CLASSIFIER_PROMPT,
+    SUPERVISOR_PROMPT,
+    CAREER_AGENT_PROMPT,
+    PROJECT_AGENT_PROMPT,
+    SKILLS_AGENT_PROMPT,
+    PERSONAL_AGENT_PROMPT,
+    SYNTHESIS_AGENT_PROMPT,
+    GROUNDING_GUARD_PROMPT,
 )
 
 # Registry of all managed prompts: key → {content, description}
@@ -85,6 +94,39 @@ _DEFAULTS: dict[str, dict] = {
     "EVAL_DATASET_GENERATOR_PROMPT": {
         "content": EVAL_DATASET_GENERATOR_PROMPT,
         "description": "Generates RAG evaluation questions/answers from the ingested knowledge base. Placeholder: {context}.",
+    },
+    # ── Multi-agent prompts ──────────────────────────────────────────────────
+    "INTENT_CLASSIFIER_PROMPT": {
+        "content": INTENT_CLASSIFIER_PROMPT,
+        "description": "Multi-agent: classifies user query into domains and extracts entities. Placeholder: {query}.",
+    },
+    "SUPERVISOR_PROMPT": {
+        "content": SUPERVISOR_PROMPT,
+        "description": "Multi-agent: supervisor reviews intent and confirms agent dispatch plan. Placeholder: {intent}.",
+    },
+    "CAREER_AGENT_PROMPT": {
+        "content": CAREER_AGENT_PROMPT,
+        "description": "Multi-agent: career specialist agent prompt. Placeholder: {context}.",
+    },
+    "PROJECT_AGENT_PROMPT": {
+        "content": PROJECT_AGENT_PROMPT,
+        "description": "Multi-agent: project specialist agent prompt. Placeholder: {context}.",
+    },
+    "SKILLS_AGENT_PROMPT": {
+        "content": SKILLS_AGENT_PROMPT,
+        "description": "Multi-agent: skills/CV specialist agent prompt. Placeholder: {context}.",
+    },
+    "PERSONAL_AGENT_PROMPT": {
+        "content": PERSONAL_AGENT_PROMPT,
+        "description": "Multi-agent: personal background specialist agent prompt. Placeholder: {context}.",
+    },
+    "SYNTHESIS_AGENT_PROMPT": {
+        "content": SYNTHESIS_AGENT_PROMPT,
+        "description": "Multi-agent: synthesis agent merges specialist context into final answer. Placeholders: {agent_context}, {query}.",
+    },
+    "GROUNDING_GUARD_PROMPT": {
+        "content": GROUNDING_GUARD_PROMPT,
+        "description": "Multi-agent: grounding guard checks merged context for contradictions and irrelevant content. Placeholder: {context}.",
     },
 }
 

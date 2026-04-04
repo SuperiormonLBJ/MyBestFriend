@@ -29,3 +29,20 @@ class RetrievalEval(BaseModel):
 
 class RerankOrder(BaseModel):
     order: list[int] = Field(description="The order of the documents based on the relevance to the question")
+
+class AgentRoutingEval(BaseModel):
+    """Per-question agent routing evaluation result."""
+    question: str
+    expected_agents: list[str]
+    activated_agents: list[str]
+    routing_correct: bool
+
+class MultiAgentEvalResult(BaseModel):
+    """Aggregated multi-agent evaluation metrics."""
+    agent_routing_accuracy: float = Field(description="ARA: fraction of test questions where correct agents were activated")
+    agent_context_redundancy_ratio: float = Field(description="ACRR: ratio of unique docs to total docs across agents (higher = more diverse)")
+    per_agent_mrr: dict = Field(description="MRR score per agent name")
+    synthesis_faithfulness: float = Field(description="RAGAS faithfulness of synthesis output against merged context")
+    parallel_efficiency: float = Field(description="max(agent_latencies) / sum(agent_latencies) — approaches 1/N for N parallel agents")
+    total_questions: int
+    routing_details: list[AgentRoutingEval] = Field(default_factory=list)

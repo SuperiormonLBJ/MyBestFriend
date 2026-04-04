@@ -94,6 +94,95 @@ The frontend uses `BACKEND_URL` (or `NEXT_PUBLIC_BACKEND_URL`) from `frontend/sr
 - [ ] Frontend on Vercel with **Root Directory** = `frontend`.
 - [ ] Frontend env var `BACKEND_URL` = backend URL.
 - [ ] Optional: add `backend/requirements.txt` for hosts that prefer pip: from repo root, `cd backend && uv pip compile pyproject.toml -o requirements.txt`.
+- [ ] Optional: `agent_run_traces` table exists in Supabase (created automatically by migration).
+- [ ] Optional: enable multi-agent mode via admin UI → Settings → `USE_MULTI_AGENT=true`.
+
+---
+
+## 4. Multi-Agent Mode
+
+The multi-agent system is **off by default** (`USE_MULTI_AGENT=false`). Enable it via the admin UI at `/admin/settings` or directly in Supabase `app_config`.
+
+### Key config flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `USE_MULTI_AGENT` | `false` | Enable supervisor + specialist agent graph |
+| `MULTI_AGENT_TOKEN_BUDGET` | `6000` | Max context tokens across all agents |
+| `MULTI_AGENT_PARALLEL` | `true` | Parallel agent dispatch via LangGraph Send |
+| `MULTI_AGENT_LOG_TRACES` | `true` | Log each run to `agent_run_traces` table |
+| `HITL_ENABLED` | `false` | Human-in-the-loop review (pauses graph) |
+
+### Verify it's working
+
+```bash
+# Check graph topology
+curl https://your-backend/api/agent/graph
+
+# Send a test message with multi-agent mode forced
+curl -X POST https://your-backend/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Tell me about your projects", "mode": "multi_agent"}'
+```
+
+### Agent traces
+
+When `MULTI_AGENT_LOG_TRACES=true`, each run writes to the `agent_run_traces` Supabase table:
+
+```bash
+# View trace for a specific run
+curl https://your-backend/api/agent/trace/<run_id>
+```
+
+---
+
+## 5. MCP Server (Claude Desktop / external LLM integration)
+
+The MCP server exposes 6 knowledge tools via stdio, making the twin's knowledge base composable with any MCP-compatible client.
+
+### Local setup (Claude Desktop)
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mybestfriend": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project", "/absolute/path/to/MyBestFriend/backend",
+        "python", "-m", "src.mcp_server"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "sk-...",
+        "SUPABASE_URL": "https://...",
+        "SUPABASE_SECRET_KEY": "..."
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. You can then ask Claude to `search_knowledge`, `list_domain_items`, etc.
+
+### Test with MCP Inspector
+
+```bash
+cd backend
+npx @modelcontextprotocol/inspector uv run python -m src.mcp_server
+```
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `search_knowledge` | Semantic + lexical search across the knowledge base |
+| `get_time_period_summary` | All knowledge for a given year (e.g. "2023") |
+| `list_domain_items` | List projects / jobs / skills / education / hobbies |
+| `get_knowledge_scope` | Doc type counts + year range |
+| `generate_structured_bio` | Bio in professional / casual / conference style |
+| `extract_job_fit_signals` | Analyse a job description against the knowledge base |
 
 ---
 
