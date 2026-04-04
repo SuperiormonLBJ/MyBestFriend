@@ -1,5 +1,4 @@
 import re
-import time
 import json
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
@@ -9,11 +8,7 @@ from langchain_core.documents import Document
 import os
 import sys
 import threading
-from pathlib import Path
-
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import utils.path_setup  # noqa: F401
 
 from utils.base_models import RerankOrder
 from utils.config_loader import ConfigLoader
@@ -564,40 +559,39 @@ def _generate_followup_queries(query: str, initial_context: str) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Structured retrieval logging
-# ---------------------------------------------------------------------------
-
-def _log_retrieval(question: str, chosen_chunks: list, no_info: bool, latency_ms: float) -> None:
-    pass
-
-
-# ---------------------------------------------------------------------------
 # Answer generation
 # ---------------------------------------------------------------------------
 
-def generate_answer(query, history: list = [], requester_name: str = "", requester_email: str = ""):
+def _maybe_expand_context(query: str, reranked: list) -> tuple[list, str]:
+    """
+    Run multi-step expansion if MULTI_STEP_ENABLED and the query is complex.
+    Returns (reranked_docs, context_str). Falls back to inputs unchanged if disabled.
+    Extracted to avoid copy-paste between generate_answer() and generate_answer_stream().
+    """
+    if not (config.get_multi_step_enabled() and _is_complex_query(query)):
+        return reranked, "\n".join(doc.page_content for doc in reranked)
+    followups = _generate_followup_queries(query, "\n".join(doc.page_content for doc in reranked))
+    if not followups:
+        return reranked, "\n".join(doc.page_content for doc in reranked)
+    extra_docs = []
+    for fq in followups:
+        extra_docs.extend(fetch_context(fq))
+    all_docs = deduplicate_context(reranked + extra_docs)
+    reranked = rerank_documents(query, all_docs, top_k=TOP_K)
+    return reranked, "\n".join(doc.page_content for doc in reranked)
+
+
+def generate_answer(query: str, history: list = []):
     """
     Generate the answer for the query.
     Returns (answer: str, context_docs: list, no_info: bool, sources: list[dict]).
     """
-    t0 = time.time()
     rewritten_query = rewrite_query(query, history)
     combined_rewritten = combine_all_user_questions(rewritten_query, history)
     combined_original = combine_all_user_questions(query, history)
     context_docs = deduplicate_context(fetch_context(combined_rewritten) + fetch_context(combined_original))
     reranked = rerank_documents(query, context_docs, top_k=TOP_K)
-    context = "\n".join([doc.page_content for doc in reranked])
-
-    # Multi-step: expand context for complex queries
-    if config.get_multi_step_enabled() and _is_complex_query(query):
-        followups = _generate_followup_queries(query, context)
-        if followups:
-            extra_docs = []
-            for fq in followups:
-                extra_docs.extend(fetch_context(fq))
-            all_docs = deduplicate_context(reranked + extra_docs)
-            reranked = rerank_documents(query, all_docs, top_k=TOP_K)
-            context = "\n".join([doc.page_content for doc in reranked])
+    reranked, context = _maybe_expand_context(query, reranked)
 
     messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
     messages.extend(convert_to_messages(history))
@@ -608,15 +602,12 @@ def generate_answer(query, history: list = [], requester_name: str = "", request
     no_info = "[[NO_INFO]]" in raw
     answer = raw.replace("[[NO_INFO]]", "").strip()
 
-    # Self-check: verify claims are grounded in context
     if config.get_self_check_enabled() and not no_info and answer:
         check = _self_check_answer(answer, context)
         if not check["supported"] and check["severity"] == "high":
             no_info = True
 
     sources = _extract_sources(reranked)
-    latency_ms = (time.time() - t0) * 1000
-    _log_retrieval(query, reranked, no_info, latency_ms)
     return answer, context_docs, no_info, sources
 
 
@@ -625,24 +616,12 @@ def generate_answer_stream(query: str, history: list = []):
     Stream the answer token by token.
     Yields dicts: {'token': str} for each chunk, then {'done': True, 'no_info': bool, 'final': str, 'sources': list}.
     """
-    t0 = time.time()
     rewritten_query = rewrite_query(query, history)
     combined_rewritten = combine_all_user_questions(rewritten_query, history)
     combined_original = combine_all_user_questions(query, history)
     context_docs = deduplicate_context(fetch_context(combined_rewritten) + fetch_context(combined_original))
     reranked = rerank_documents(query, context_docs, top_k=TOP_K)
-    context = "\n".join([doc.page_content for doc in reranked])
-
-    # Multi-step expansion (runs before streaming begins)
-    if config.get_multi_step_enabled() and _is_complex_query(query):
-        followups = _generate_followup_queries(query, context)
-        if followups:
-            extra_docs = []
-            for fq in followups:
-                extra_docs.extend(fetch_context(fq))
-            all_docs = deduplicate_context(reranked + extra_docs)
-            reranked = rerank_documents(query, all_docs, top_k=TOP_K)
-            context = "\n".join([doc.page_content for doc in reranked])
+    reranked, context = _maybe_expand_context(query, reranked)
 
     messages = [SystemMessage(content=get_prompt("SYSTEM_PROMPT_GENERATOR").format(context=context))]
     messages.extend(convert_to_messages(history))
@@ -665,8 +644,6 @@ def generate_answer_stream(query: str, history: list = []):
             no_info = True
 
     sources = _extract_sources(reranked)
-    latency_ms = (time.time() - t0) * 1000
-    _log_retrieval(query, reranked, no_info, latency_ms)
     yield {"done": True, "no_info": no_info, "final": final, "sources": sources}
 
 

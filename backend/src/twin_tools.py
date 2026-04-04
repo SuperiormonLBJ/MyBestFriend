@@ -3,12 +3,7 @@ Twin-specific tools for agentic use.
 Each tool queries the vector store or Supabase to produce structured outputs
 that a downstream LLM agent can use for richer, task-oriented answers.
 """
-import sys
-from pathlib import Path
-
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import utils.path_setup  # noqa: F401
 
 from utils.supabase_client import supabase_client
 

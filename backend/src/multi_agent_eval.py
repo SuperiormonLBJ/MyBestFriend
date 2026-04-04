@@ -15,11 +15,7 @@ Usage:
 """
 import sys
 import time
-from pathlib import Path
-
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import utils.path_setup  # noqa: F401
 
 from utils.base_models import TestQuestion, MultiAgentEvalResult, AgentRoutingEval
 from src.multi_agent_graph import run_multi_agent_graph

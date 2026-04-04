@@ -19,18 +19,12 @@ Usage from api_server.py:
         yield event
 """
 import json
-import sys
 import time
 import uuid
-import asyncio
 import threading
 import queue as queue_module
-from pathlib import Path
 from typing import Callable
-
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import utils.path_setup  # noqa: F401
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import Send
@@ -49,6 +43,10 @@ from src.agent_tools import (
 )
 
 config = ConfigLoader()
+
+# Thread-local: the streaming synthesis node reads from here so the graph
+# can be compiled once and reused across all streaming calls.
+_tl = threading.local()
 
 SPECIALIST_AGENT_NAMES = [
     "career_agent",
@@ -308,15 +306,21 @@ def _synthesis_node(state: MultiAgentState) -> MultiAgentState:
     return state
 
 
-def _synthesis_streaming_node(state: MultiAgentState, token_queue: queue_module.Queue) -> MultiAgentState:
+def _synthesis_tl_node(state: MultiAgentState) -> MultiAgentState:
     """
-    Streaming variant of synthesis: puts tokens into token_queue as they arrive.
-    Used by run_multi_agent_graph_stream() in the background thread.
+    Streaming synthesis node that reads its token queue from thread-local storage.
+    This allows the streaming graph to be compiled once and cached as a singleton:
+    each call sets _tl.token_queue before invoking the graph, then this node picks it up.
     """
+    token_queue: queue_module.Queue | None = getattr(_tl, "token_queue", None)
+    if token_queue is None:
+        # No queue set — fall back to non-streaming synthesis (safety guard)
+        return _synthesis_node(state)
+
     if state.get("no_info") or not state.get("context"):
         state["no_info"] = True
         state["answer"] = ""
-        token_queue.put(None)  # sentinel
+        token_queue.put(None)
         return state
 
     agent_context = format_agent_summary(state.get("agent_results", []))
@@ -485,9 +489,46 @@ def build_multi_agent_graph(use_checkpointing: bool = False):
     return graph.compile(checkpointer=checkpointer)
 
 
-# Cached singletons
+# Cached singletons — compiled once per process, not per request
 _graph: object = None
 _graph_with_checkpointing: object = None
+_streaming_graph: object = None  # streaming variant with token-queue synthesis node
+
+
+def _build_streaming_graph() -> object:
+    """
+    Build the streaming variant of the multi-agent graph.
+    Uses _synthesis_tl_node which reads its token_queue from thread-local storage,
+    so this graph can be compiled once and reused across all streaming calls.
+    Each call sets _tl.token_queue before invoking the graph (see run_multi_agent_graph_stream).
+    """
+    graph = StateGraph(MultiAgentState)
+    graph.add_node("intent_classifier", _intent_classifier_node)
+    graph.add_node("supervisor", _supervisor_node)
+    graph.add_node("career_agent", career_agent)
+    graph.add_node("project_agent", project_agent)
+    graph.add_node("skills_agent", skills_agent)
+    graph.add_node("personal_agent", personal_agent)
+    graph.add_node("job_prep_agent", job_prep_agent)
+    graph.add_node("grounding_guard", _grounding_guard_node)
+    graph.add_node("synthesis", _synthesis_tl_node)  # reads queue from _tl.token_queue
+    graph.add_node("hitl_review", _await_human_review_node)
+    graph.add_node("trace_log", _trace_log_node)
+
+    graph.set_entry_point("intent_classifier")
+    graph.add_edge("intent_classifier", "supervisor")
+    graph.add_conditional_edges(
+        "supervisor",
+        _route_to_agents,
+        {a: a for a in SPECIALIST_AGENT_NAMES} | {"grounding_guard": "grounding_guard"},
+    )
+    for agent_name in SPECIALIST_AGENT_NAMES:
+        graph.add_edge(agent_name, "grounding_guard")
+    graph.add_edge("grounding_guard", "synthesis")
+    graph.add_edge("synthesis", "hitl_review")
+    graph.add_edge("hitl_review", "trace_log")
+    graph.add_edge("trace_log", END)
+    return graph.compile()
 
 
 def get_multi_agent_graph():
@@ -504,6 +545,14 @@ def get_multi_agent_graph_with_checkpointing():
     if _graph_with_checkpointing is None:
         _graph_with_checkpointing = build_multi_agent_graph(use_checkpointing=True)
     return _graph_with_checkpointing
+
+
+def get_streaming_graph():
+    """Return cached streaming graph (uses _synthesis_tl_node, compiled once)."""
+    global _streaming_graph
+    if _streaming_graph is None:
+        _streaming_graph = _build_streaming_graph()
+    return _streaming_graph
 
 
 # ---------------------------------------------------------------------------
@@ -535,67 +584,39 @@ def run_multi_agent_graph_stream(
     """
     Generator that yields SSE-compatible dicts for the multi-agent graph.
 
+    Uses a cached streaming graph (compiled once). Each call injects a fresh
+    token_queue into thread-local storage; _synthesis_tl_node reads from there.
+    No graph rebuild per request.
+
     Event types:
-      {"agent_status": "<name>", "latency_ms": int, "doc_count": int}  — per agent completion
       {"token": str}                                                     — synthesis tokens
       {"done": True, "no_info": bool, "final": str, "sources": list,
        "agent_trace": list}                                              — terminal event
     """
     token_queue: queue_module.Queue = queue_module.Queue()
     result_container: dict = {}
-
-    # Build a streaming-synthesis variant of the graph
-    def _streaming_synthesis_node(state: MultiAgentState) -> MultiAgentState:
-        return _synthesis_streaming_node(state, token_queue)
-
-    # Build a one-off graph with the streaming synthesis node
-    streaming_graph = StateGraph(MultiAgentState)
-    streaming_graph.add_node("intent_classifier", _intent_classifier_node)
-    streaming_graph.add_node("supervisor", _supervisor_node)
-    streaming_graph.add_node("career_agent", career_agent)
-    streaming_graph.add_node("project_agent", project_agent)
-    streaming_graph.add_node("skills_agent", skills_agent)
-    streaming_graph.add_node("personal_agent", personal_agent)
-    streaming_graph.add_node("job_prep_agent", job_prep_agent)
-    streaming_graph.add_node("grounding_guard", _grounding_guard_node)
-    streaming_graph.add_node("synthesis", _streaming_synthesis_node)
-    streaming_graph.add_node("hitl_review", _await_human_review_node)
-    streaming_graph.add_node("trace_log", _trace_log_node)
-
-    streaming_graph.set_entry_point("intent_classifier")
-    streaming_graph.add_edge("intent_classifier", "supervisor")
-    streaming_graph.add_conditional_edges(
-        "supervisor",
-        _route_to_agents,
-        {a: a for a in SPECIALIST_AGENT_NAMES} | {"grounding_guard": "grounding_guard"},
-    )
-    for agent_name in SPECIALIST_AGENT_NAMES:
-        streaming_graph.add_edge(agent_name, "grounding_guard")
-    streaming_graph.add_edge("grounding_guard", "synthesis")
-    streaming_graph.add_edge("synthesis", "hitl_review")
-    streaming_graph.add_edge("hitl_review", "trace_log")
-    streaming_graph.add_edge("trace_log", END)
-
-    compiled = streaming_graph.compile()
     initial = build_initial_multi_agent_state(query, history, thread_id or str(uuid.uuid4()))
 
     def _run_graph():
-        result = compiled.invoke(initial)
-        result_container["state"] = result
+        # Set queue on the background thread's thread-local before invoking
+        _tl.token_queue = token_queue
+        try:
+            result = get_streaming_graph().invoke(initial)
+            result_container["state"] = result
+        finally:
+            _tl.token_queue = None
 
-    thread = threading.Thread(target=_run_graph, daemon=True)
-    thread.start()
+    bg_thread = threading.Thread(target=_run_graph, daemon=True)
+    bg_thread.start()
 
-    # Yield tokens as they arrive from synthesis
     while True:
         item = token_queue.get(timeout=120)
         if item is None:
             break
         yield item
 
-    thread.join(timeout=5)
+    bg_thread.join(timeout=5)
     final_state = result_container.get("state", {})
-
     yield {
         "done": True,
         "no_info": final_state.get("no_info", True),

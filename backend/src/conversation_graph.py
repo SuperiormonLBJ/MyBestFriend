@@ -8,13 +8,8 @@ Usage from api_server.py:
     from conversation_graph import run_graph
     answer, context_docs, no_info, sources = run_graph(query, history)
 """
-import sys
-from pathlib import Path
 from typing import TypedDict
-
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import utils.path_setup  # noqa: F401
 
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, SystemMessage

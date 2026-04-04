@@ -1,10 +1,5 @@
 import json
-from pathlib import Path
-import sys
-# Add project root to path so we can import from utils
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import utils.path_setup  # noqa: F401
 from utils.base_models import TestQuestion
 import tqdm
 from src.rag_retrieval import fetch_context, generate_answer

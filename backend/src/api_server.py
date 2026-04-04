@@ -42,7 +42,6 @@ from .eval_dataset_store import (
     _row_to_test_question,
 )
 from utils.base_models import TestQuestion
-from utils.prompt_manager import get_prompt
 
 config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
@@ -610,6 +609,7 @@ def api_reset_prompt(key: str):
 # ---------------------------------------------------------------------------
 
 _eval_jobs: dict[str, dict] = {}
+_eval_results: dict[str, dict] = {}  # multi-agent eval job results
 
 
 def _save_eval_result(result: dict) -> None:
@@ -977,7 +977,3 @@ def api_evaluate_multi_agent(_: None = AdminAuth):
     _eval_results[job_id] = {"status": "running"}
     threading.Thread(target=_run_eval, daemon=True).start()
     return {"job_id": job_id, "status": "running"}
-
-
-# In-memory eval job store (shared with existing /api/evaluate polling)
-_eval_results: dict = {}

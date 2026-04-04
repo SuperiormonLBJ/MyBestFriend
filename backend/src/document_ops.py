@@ -3,8 +3,7 @@ Document operations for Admin: add/delete documents and their chunks in the vect
 Also syncs to Supabase `documents` table as cloud storage.
 """
 import os
-import sys
-from pathlib import Path
+import utils.path_setup  # noqa: F401
 
 from langchain_core.documents import Document
 
@@ -16,11 +15,6 @@ from src.rag_ingestion import (
 )
 from utils.config_loader import ConfigLoader as _ConfigLoader
 _doc_ops_config = _ConfigLoader()
-
-# Add project root so utils/ is importable when running from src/
-_project_root = Path(__file__).parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
 
 from utils.supabase_client import supabase_client
 

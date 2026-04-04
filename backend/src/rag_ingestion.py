@@ -1,15 +1,10 @@
-from pathlib import Path
 from dotenv import load_dotenv
 import os
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_openai import OpenAIEmbeddings
-import sys
-
-# Add project root to path so we can import from utils
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import utils.path_setup  # noqa: F401
+from pathlib import Path
 
 from utils.config_loader import ConfigLoader
 from langchain_core.documents import Document
@@ -34,7 +29,7 @@ RAG Ingestion Module
 """
 
 config = ConfigLoader()
-# Resolve DATA_DIR to absolute path relative to project root
+project_root = Path(__file__).parent.parent
 data_dir_from_config = config.get_data_dir()
 DATA_DIR = str((project_root / data_dir_from_config).resolve())
 MODEL = config.get_llm_model()
