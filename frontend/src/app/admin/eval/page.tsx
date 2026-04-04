@@ -15,6 +15,7 @@ import {
   Search,
   Settings2,
   Database,
+  Network,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,23 @@ type Job = {
   started_at?: number;
   finished_at?: number;
   result?: EvalResult;
+  error?: string;
+};
+
+type MultiAgentEvalResult = {
+  agent_routing_accuracy: number;
+  agent_context_redundancy_ratio: number;
+  per_agent_mrr: Record<string, number>;
+  synthesis_faithfulness: number;
+  parallel_efficiency: number;
+  total_questions: number;
+};
+
+type MultiAgentJob = {
+  status: JobStatus;
+  started_at?: number;
+  finished_at?: number;
+  result?: MultiAgentEvalResult;
   error?: string;
 };
 
@@ -151,7 +169,10 @@ export default function EvalPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [ticker, setTicker] = useState(0); // used for elapsed-time re-render
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState<"run" | "dataset">("run");
+  const [activeTab, setActiveTab] = useState<"run" | "multi_agent" | "dataset">("run");
+  const [maJob, setMaJob] = useState<MultiAgentJob>({ status: "idle" });
+  const [maJobId, setMaJobId] = useState<string | null>(null);
+  const maPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [dataset, setDataset] = useState<EvalRow[]>([]);
   const [datasetLoading, setDatasetLoading] = useState(false);
@@ -201,7 +222,26 @@ export default function EvalPage() {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
+      if (maPollRef.current) clearTimeout(maPollRef.current);
     };
+  }, []);
+
+  const pollMa = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/evaluate/${id}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: MultiAgentJob = await res.json();
+      setMaJob(data);
+      if (data.status === "running") {
+        maPollRef.current = setTimeout(() => pollMa(id), 3000);
+      }
+    } catch (err) {
+      setMaJob((prev) => ({
+        ...prev,
+        status: "error",
+        error: err instanceof Error ? err.message : "Polling failed",
+      }));
+    }
   }, []);
 
   const loadDataset = useCallback(async () => {
@@ -483,6 +523,34 @@ export default function EvalPage() {
     }
   };
 
+  const handleRunMultiAgent = async () => {
+    if (!(await ensureCanModify())) return;
+    if (maPollRef.current) clearTimeout(maPollRef.current);
+    setMaJob({ status: "running", started_at: Date.now() / 1000 });
+    setMaJobId(null);
+    try {
+      const res = await fetch("/api/evaluate/multi-agent", {
+        method: "POST",
+        headers: { "X-Admin-Key": getStoredAdminKey() },
+      });
+      if (res.status === 401) {
+        markWriteUnauthenticated();
+        setMaJob({ status: "error", error: "Admin key required or invalid." });
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setMaJobId(data.job_id);
+      setMaJob((prev) => ({ ...prev, ...data }));
+      maPollRef.current = setTimeout(() => pollMa(data.job_id), 3000);
+    } catch (err) {
+      setMaJob({
+        status: "error",
+        error: err instanceof Error ? err.message : "Failed to start",
+      });
+    }
+  };
+
   const isRunning = job.status === "running";
   const isDone = job.status === "done";
   const isError = job.status === "error";
@@ -494,19 +562,27 @@ export default function EvalPage() {
         title="EVALUATION"
         subtitle="Run the RAG evaluation suite against your test questions."
         actions={
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={isRunning}
-            className="flex items-center gap-2 border-2 border-[#000000] bg-[#000000] px-5 py-2.5 font-body text-sm font-bold text-[var(--primary)] hover:bg-[#000000]/80 disabled:opacity-50 transition-colors cursor-pointer"
-          >
-            {isRunning ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4" />
-            )}
-            {isRunning ? "Running…" : "Run Evaluation"}
-          </button>
+          activeTab === "run" ? (
+            <button
+              type="button"
+              onClick={handleRun}
+              disabled={isRunning}
+              className="flex items-center gap-2 border-2 border-[#000000] bg-[#000000] px-5 py-2.5 font-body text-sm font-bold text-[var(--primary)] hover:bg-[#000000]/80 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {isRunning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {isRunning ? "Running…" : "Run Evaluation"}
+            </button>
+          ) : activeTab === "multi_agent" ? (
+            <button
+              type="button"
+              onClick={handleRunMultiAgent}
+              disabled={maJob.status === "running"}
+              className="flex items-center gap-2 border-2 border-[#000000] bg-[#000000] px-5 py-2.5 font-body text-sm font-bold text-[var(--primary)] hover:bg-[#000000]/80 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {maJob.status === "running" ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+              {maJob.status === "running" ? "Running…" : "Run Multi-Agent Eval"}
+            </button>
+          ) : null
         }
       />
 
@@ -525,7 +601,18 @@ export default function EvalPage() {
                   : "border-transparent text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
               }`}
             >
-              Run evaluation
+              RAG evaluation
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("multi_agent")}
+              className={`px-3 py-1.5 text-xs font-semibold cursor-pointer border-b-2 ${
+                activeTab === "multi_agent"
+                  ? "border-[var(--primary)] text-[var(--foreground)]"
+                  : "border-transparent text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              Multi-agent eval
             </button>
             <button
               type="button"
@@ -700,6 +787,103 @@ export default function EvalPage() {
                       ))}
                   </div>
                 </SectionCard>
+              )}
+            </>
+          )}
+
+          {activeTab === "multi_agent" && (
+            <>
+              {maJob.status === "running" && (
+                <div className="flex items-center gap-3 border-2 border-[var(--border)] bg-[var(--primary)]/20 px-4 py-3 font-body text-sm font-semibold text-[var(--foreground)]">
+                  <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-teal-500" />
+                  <span>
+                    Running multi-agent evaluation…{" "}
+                    {maJob.started_at && <span className="opacity-70">{elapsed(maJob.started_at)} elapsed</span>}
+                  </span>
+                </div>
+              )}
+              {maJob.status === "error" && (
+                <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{maJob.error ?? "Evaluation failed."}</span>
+                </div>
+              )}
+              {maJob.status === "done" && (
+                <div className="flex items-center gap-3 border-2 border-[var(--border)] bg-[var(--primary)]/20 px-4 py-3 font-body text-sm font-semibold text-[var(--foreground)]">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                  <span>
+                    Multi-agent eval complete —{" "}
+                    <span className="font-medium">{maJob.result?.total_questions ?? 0} questions</span>
+                    {maJob.started_at && maJob.finished_at && (
+                      <span className="opacity-70"> in {elapsed(maJob.started_at, maJob.finished_at)}</span>
+                    )}
+                  </span>
+                </div>
+              )}
+              {maJob.status === "idle" && (
+                <div className="rounded-xl border border-dashed border-[var(--border)] px-8 py-16 text-center">
+                  <Network className="mx-auto mb-3 h-10 w-10 text-teal-400/50" />
+                  <p className="text-sm font-medium text-[var(--foreground-muted)]">No results yet</p>
+                  <p className="mt-1 text-xs text-[var(--foreground-muted)]/60">
+                    Click <span className="font-medium">Run Multi-Agent Eval</span> to start
+                  </p>
+                </div>
+              )}
+              {maJob.result && (
+                <>
+                  <SectionCard
+                    icon={<Network className="h-4 w-4 text-teal-400" />}
+                    title="Agent Orchestration"
+                  >
+                    <div className="space-y-4">
+                      <MetricBar
+                        label="Agent Routing Accuracy (ARA)"
+                        value={maJob.result.agent_routing_accuracy}
+                        max={1}
+                        format={(v) => `${(v * 100).toFixed(1)}%`}
+                      />
+                      <MetricBar
+                        label="Context Redundancy Ratio (ACRR)"
+                        value={maJob.result.agent_context_redundancy_ratio}
+                        max={1}
+                        format={(v) => v.toFixed(3)}
+                      />
+                      <MetricBar
+                        label="Synthesis Faithfulness"
+                        value={maJob.result.synthesis_faithfulness}
+                        max={1}
+                        format={(v) => v.toFixed(3)}
+                      />
+                      <MetricBar
+                        label="Parallel Efficiency"
+                        value={maJob.result.parallel_efficiency}
+                        max={1}
+                        format={(v) => v.toFixed(3)}
+                      />
+                    </div>
+                  </SectionCard>
+                  <SectionCard
+                    icon={<Brain className="h-4 w-4 text-violet-400" />}
+                    title="Per-Agent MRR"
+                  >
+                    <div className="space-y-4">
+                      {Object.entries(maJob.result.per_agent_mrr).map(([agent, mrr]) => (
+                        <MetricBar
+                          key={agent}
+                          label={agent.replace(/_/g, " ")}
+                          value={mrr}
+                          max={1}
+                          format={(v) => v.toFixed(3)}
+                        />
+                      ))}
+                    </div>
+                  </SectionCard>
+                </>
+              )}
+              {maJobId && (
+                <p className="text-center text-xs text-[var(--foreground-muted)]/50">
+                  Job ID: <code>{maJobId}</code>
+                </p>
               )}
             </>
           )}

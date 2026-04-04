@@ -51,6 +51,10 @@ const EMPTY_FORM: FullConfig = {
   self_check_enabled: false,
   multi_step_enabled: false,
   use_graph: false,
+  use_multi_agent: false,
+  multi_agent_token_budget: 6000,
+  multi_agent_parallel: true,
+  multi_agent_log_traces: true,
   admin_api_key: "",
 };
 
@@ -432,6 +436,63 @@ export default function SettingsPage() {
                   <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.use_graph ? "translate-x-5" : "translate-x-0.5"}`} />
                 </button>
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-[var(--foreground)]">Multi-agent mode</p>
+                  <p className="text-xs text-[var(--foreground-muted)]">Supervisor + parallel domain specialist agents (overrides LangGraph orchestrator)</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, use_multi_agent: !p.use_multi_agent }))}
+                  className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.use_multi_agent ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                  aria-label="Toggle multi-agent"
+                >
+                  <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.use_multi_agent ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {form.use_multi_agent && (
+                <>
+                  <Field label="Token budget" hint="Max context tokens across all agents combined. Default: 6000">
+                    <input
+                      type="number"
+                      step="500"
+                      min="1000"
+                      max="32000"
+                      value={form.multi_agent_token_budget ?? 6000}
+                      onChange={(e) => setForm((p) => ({ ...p, multi_agent_token_budget: parseInt(e.target.value) || 6000 }))}
+                      className={inputCls}
+                    />
+                  </Field>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--foreground)]">Parallel execution</p>
+                      <p className="text-xs text-[var(--foreground-muted)]">Run specialist agents concurrently via LangGraph Send API</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setForm((p) => ({ ...p, multi_agent_parallel: !p.multi_agent_parallel }))}
+                      className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.multi_agent_parallel ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                      aria-label="Toggle parallel agents"
+                    >
+                      <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.multi_agent_parallel ? "translate-x-5" : "translate-x-0.5"}`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--foreground)]">Log agent traces</p>
+                      <p className="text-xs text-[var(--foreground-muted)]">Write per-run traces to agent_run_traces Supabase table</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setForm((p) => ({ ...p, multi_agent_log_traces: !p.multi_agent_log_traces }))}
+                      className={`relative h-6 w-11 rounded-full border-2 border-[var(--border)] transition-colors cursor-pointer ${form.multi_agent_log_traces ? "bg-[var(--primary)]" : "bg-[var(--background)]"}`}
+                      aria-label="Toggle trace logging"
+                    >
+                      <span className={`absolute top-0.5 left-0 h-4 w-4 rounded-full bg-[var(--border)] transition-transform ${form.multi_agent_log_traces ? "translate-x-5" : "translate-x-0.5"}`} />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </SectionCard>
 

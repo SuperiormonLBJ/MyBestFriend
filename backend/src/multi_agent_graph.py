@@ -69,6 +69,7 @@ def _intent_classifier_node(state: MultiAgentState) -> MultiAgentState:
     from src.agent_state import IntentResult
     from src.rag_retrieval import rewrite_query
 
+    print(f"[intent_classifier] query: {state['query']!r}")
     if is_loop_detected(state):
         state["no_info"] = True
         return state
@@ -76,9 +77,10 @@ def _intent_classifier_node(state: MultiAgentState) -> MultiAgentState:
     # Reuse existing query rewriting for better search
     rewritten = rewrite_query(state["query"], state["history"])
     state["rewritten_query"] = rewritten
+    print(f"[intent_classifier] rewritten: {rewritten!r}")
 
     llm = ChatOpenAI(model=config.get_rewrite_model(), temperature=0)
-    llm_structured = llm.with_structured_output(IntentResult)
+    llm_structured = llm.with_structured_output(IntentResult, method="function_calling")
 
     prompt = get_prompt("INTENT_CLASSIFIER_PROMPT").format(query=state["query"])
     try:
@@ -89,6 +91,7 @@ def _intent_classifier_node(state: MultiAgentState) -> MultiAgentState:
             "entities": result.entities,
             "confidence": result.confidence,
         }
+        print(f"[intent_classifier] domain={result.primary_domain} agents={result.requires_agents} confidence={result.confidence:.2f}")
     except Exception as e:
         print(f"[intent_classifier] Error: {e} — defaulting to all domain agents")
         state["intent"] = {
@@ -136,13 +139,16 @@ def _supervisor_node(state: MultiAgentState) -> MultiAgentState:
         state["no_info"] = True
         return state
 
+    active = state.get("intent", {}).get("requires_agents", [])
+    run_id = str(uuid.uuid4())
+    print(f"[supervisor] run_id={run_id} dispatching {len(active)} agents: {active}")
     state["token_budget_limit"] = config.get_multi_agent_token_budget()
     state["token_budget_used"] = 0
     state["agent_results"] = []
     state["agent_trace"] = []
     state["agent_errors"] = []
-    state["active_agents"] = state.get("intent", {}).get("requires_agents", [])
-    state["graph_run_id"] = str(uuid.uuid4())
+    state["active_agents"] = active
+    state["graph_run_id"] = run_id
     return state
 
 
@@ -156,9 +162,9 @@ def _make_specialist_agent(agent_name: str) -> Callable[[MultiAgentState], Multi
     Each agent: retrieves domain-scoped docs → reranks → builds AgentResult → appends to state.
     Wrapped in try/except so a single agent failure never kills the whole graph.
     """
-    def _agent_node(state: MultiAgentState) -> MultiAgentState:
+    def _agent_node(state: MultiAgentState) -> dict:
         if is_loop_detected(state):
-            return state
+            return {"agent_results": [], "agent_trace": [], "agent_errors": []}
 
         t0 = time.time()
         query = state.get("rewritten_query") or state["query"]
@@ -167,21 +173,25 @@ def _make_specialist_agent(agent_name: str) -> Callable[[MultiAgentState], Multi
         try:
             docs = search_knowledge_by_domain(query, agent_name, top_k=top_k)
             result = build_agent_result(agent_name, docs)
+            errors = []
         except Exception as e:
             print(f"[{agent_name}] Retrieval error: {e}")
             result = build_agent_result(agent_name, [], error=str(e))
-            state["agent_errors"] = [agent_name]
+            errors = [agent_name]
 
         latency_ms = int((time.time() - t0) * 1000)
-        state["agent_results"] = [result]
-        state["agent_trace"] = [{
-            "agent": agent_name,
-            "latency_ms": latency_ms,
-            "doc_count": len(result.get("docs", [])),
-            "confidence": result.get("confidence", 0.0),
-            "error": result.get("error"),
-        }]
-        return state
+        print(f"[{agent_name}] retrieved {len(result.get('docs', []))} docs in {latency_ms}ms")
+        return {
+            "agent_results": [result],
+            "agent_trace": [{
+                "agent": agent_name,
+                "latency_ms": latency_ms,
+                "doc_count": len(result.get("docs", [])),
+                "confidence": result.get("confidence", 0.0),
+                "error": result.get("error"),
+            }],
+            "agent_errors": errors,
+        }
 
     _agent_node.__name__ = agent_name
     return _agent_node
@@ -212,8 +222,10 @@ def _grounding_guard_node(state: MultiAgentState) -> MultiAgentState:
     agent_results: list[AgentResult] = state.get("agent_results", [])
     successful = [r for r in agent_results if not r.get("error")]
 
+    print(f"[grounding_guard] fan-in: {len(agent_results)} agent(s), {len(successful)} successful")
     if not successful:
         # All agents failed — no context available
+        print("[grounding_guard] all agents failed — no_info=True")
         state["no_info"] = True
         state["grounding_passed"] = False
         state["context_docs"] = []
@@ -242,6 +254,7 @@ def _grounding_guard_node(state: MultiAgentState) -> MultiAgentState:
             break
 
     state["token_budget_used"] = token_sum
+    print(f"[grounding_guard] merged {len(merged_docs)} docs → kept {len(kept_docs)} within budget ({token_sum}/{budget} tokens)")
 
     # Build final context
     merged_context = "\n\n".join(doc.page_content for doc in kept_docs)
@@ -318,11 +331,13 @@ def _synthesis_tl_node(state: MultiAgentState) -> MultiAgentState:
         return _synthesis_node(state)
 
     if state.get("no_info") or not state.get("context"):
+        print("[synthesis] no context available — skipping")
         state["no_info"] = True
         state["answer"] = ""
         token_queue.put(None)
         return state
 
+    print(f"[synthesis] generating answer with model={config.get_generator_model()}")
     agent_context = format_agent_summary(state.get("agent_results", []))
     synthesis_prompt = get_prompt("SYNTHESIS_AGENT_PROMPT").format(
         agent_context=agent_context,
@@ -348,6 +363,7 @@ def _synthesis_tl_node(state: MultiAgentState) -> MultiAgentState:
     state["no_info"] = "[[NO_INFO]]" in full_text
     state["answer"] = full_text.replace("[[NO_INFO]]", "").strip()
     state["synthesis_model"] = config.get_generator_model()
+    print(f"[synthesis] done — {len(state['answer'])} chars, no_info={state['no_info']}")
     token_queue.put(None)  # sentinel
     return state
 

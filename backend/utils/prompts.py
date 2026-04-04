@@ -656,12 +656,12 @@ Rules:
 - Confidence should be 0.9+ for clear queries, lower for ambiguous ones.
 
 Respond with a JSON object matching:
-{
+{{
   "primary_domain": "<career|project|skills|personal|general>",
   "requires_agents": ["<agent_name>", ...],
-  "entities": {"year": "<4-digit year or empty>", "doc_type": "<hint or empty>", "job_context": false},
+  "entities": {{"year": "<4-digit year or empty>", "doc_type": "<hint or empty>", "job_context": false}},
   "confidence": 0.0
-}
+}}
 
 User question: {query}
 """

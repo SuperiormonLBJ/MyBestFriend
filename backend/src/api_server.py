@@ -777,8 +777,8 @@ def api_download_eval_dataset():
 
 @app.get("/api/evaluate/{job_id}")
 def api_get_evaluation(job_id: str):
-    """Poll the status/result of an evaluation job."""
-    job = _eval_jobs.get(job_id)
+    """Poll the status/result of an evaluation job (regular or multi-agent)."""
+    job = _eval_jobs.get(job_id) or _eval_results.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -967,10 +967,19 @@ def api_evaluate_multi_agent(_: None = AdminAuth):
                 _eval_results[job_id] = {"status": "error", "error": "No test questions found"}
                 return
             report = evaluate_multi_agent_all(tests)
-            _eval_results[job_id] = {
+            payload = {
                 "status": "done",
+                "finished_at": time.time(),
                 "result": report.model_dump(),
             }
+            _eval_results[job_id] = payload
+            try:
+                supabase_client.table("eval_results").upsert(
+                    {"id": 2, **payload},
+                    on_conflict="id",
+                ).execute()
+            except Exception as db_err:
+                print(f"[multi-agent eval] DB write warning (non-fatal): {db_err}")
         except Exception as e:
             _eval_results[job_id] = {"status": "error", "error": str(e)}
 

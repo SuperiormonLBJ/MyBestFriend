@@ -29,6 +29,10 @@ export type RetrievalConfig = {
   self_check_enabled?: boolean;
   multi_step_enabled?: boolean;
   use_graph?: boolean;
+  use_multi_agent?: boolean;
+  multi_agent_token_budget?: number;
+  multi_agent_parallel?: boolean;
+  multi_agent_log_traces?: boolean;
 };
 
 export type FullConfig = FrontendConfig &
