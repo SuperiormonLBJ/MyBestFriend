@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
+import { getBackendNoStore } from "@/lib/proxy-backend-json";
 
 export async function GET() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/prompts`, { cache: "no-store" });
+    const res = await getBackendNoStore("/api/prompts");
     if (!res.ok) {
       const err = await res.text();
       console.error("Prompts fetch error:", err);

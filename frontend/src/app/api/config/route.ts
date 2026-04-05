@@ -1,12 +1,10 @@
-import { NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
-import { adminHeaders } from "@/lib/admin";
+import { NextRequest, NextResponse } from "next/server";
+import { adminKeyFromRequest } from "@/lib/admin";
+import { getBackendNoStore, putBackendJsonAdmin } from "@/lib/proxy-backend-json";
 
 export async function GET() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/config`, {
-      cache: "no-store",
-    });
+    const res = await getBackendNoStore("/api/config");
 
     if (!res.ok) {
       const err = await res.text();
@@ -22,22 +20,21 @@ export async function GET() {
   }
 }
 
-export async function PUT(request: Request) {
-  const adminKey = (request as import("next/server").NextRequest).headers?.get?.("X-Admin-Key") ?? "";
+export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const res = await fetch(`${BACKEND_URL}/api/config`, {
-      method: "PUT",
-      headers: adminHeaders(adminKey, { "Content-Type": "application/json" }),
-      body: JSON.stringify(body),
-    });
+    const res = await putBackendJsonAdmin(
+      "/api/config",
+      body,
+      adminKeyFromRequest(request),
+    );
 
     if (!res.ok) {
       const err = await res.text();
       console.error("Config update error:", err);
       return NextResponse.json(
         { error: err || "Failed to update config" },
-        { status: res.status }
+        { status: res.status },
       );
     }
 
@@ -47,7 +44,7 @@ export async function PUT(request: Request) {
     console.error("Config update API error:", err);
     return NextResponse.json(
       { error: "Failed to update config" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
+import { getBackendNoStore } from "@/lib/proxy-backend-json";
 
 export async function GET() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/evaluate/multi-agent/latest`, {
-      cache: "no-store",
-    });
+    const res = await getBackendNoStore("/api/evaluate/multi-agent/latest");
     if (!res.ok) {
       return NextResponse.json({ status: "none" });
     }

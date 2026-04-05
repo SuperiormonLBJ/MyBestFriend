@@ -1,3 +1,9 @@
+import type { NextRequest } from "next/server";
+
+export function adminKeyFromRequest(request: NextRequest | Request): string {
+  return request.headers.get("X-Admin-Key") ?? "";
+}
+
 /**
  * Returns headers for backend admin requests.
  *

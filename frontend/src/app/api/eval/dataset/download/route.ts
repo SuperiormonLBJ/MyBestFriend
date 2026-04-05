@@ -1,8 +1,7 @@
-import { NextRequest } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
+import { backendFetch } from "@/lib/proxy-backend-json";
 
-export async function GET(_req: NextRequest) {
-  const res = await fetch(`${BACKEND_URL}/api/eval/dataset/download`, {
+export async function GET() {
+  const res = await backendFetch("/api/eval/dataset/download", {
     cache: "no-store",
   });
   const text = await res.text();
@@ -14,4 +13,3 @@ export async function GET(_req: NextRequest) {
     },
   });
 }
-

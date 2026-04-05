@@ -12,7 +12,7 @@ import {
 import { useState, useEffect, useCallback } from "react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { useAdminWrite } from "@/contexts/admin-write-context";
-import { getStoredAdminKey } from "@/lib/session-auth";
+import { withAdminFetchInit } from "@/lib/session-auth";
 
 type Prompt = {
   key: string;
@@ -95,11 +95,16 @@ export default function PromptsPage() {
     if (!draft?.trim()) return;
     setStates((prev) => ({ ...prev, [key]: { ...prev[key], saving: true, message: null } }));
     try {
-      const res = await fetch(`/api/prompts/${key}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
-        body: JSON.stringify({ content: draft }),
-      });
+      const res = await fetch(
+        `/api/prompts/${key}`,
+        withAdminFetchInit(
+          {
+            method: "PUT",
+            body: JSON.stringify({ content: draft }),
+          },
+          { json: true },
+        ),
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || `HTTP ${res.status}`);
@@ -122,7 +127,10 @@ export default function PromptsPage() {
       [key]: { ...prev[key], resetting: true, message: null },
     }));
     try {
-      const res = await fetch(`/api/prompts/${key}`, { method: "POST", headers: { "X-Admin-Key": getStoredAdminKey() } });
+      const res = await fetch(
+        `/api/prompts/${key}`,
+        withAdminFetchInit({ method: "POST" }),
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || `HTTP ${res.status}`);

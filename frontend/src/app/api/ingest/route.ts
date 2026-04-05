@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
-import { adminHeaders } from "@/lib/admin";
+import { adminKeyFromRequest } from "@/lib/admin";
+import { postBackendAdminEmpty } from "@/lib/proxy-backend-json";
 
 export async function POST(request: NextRequest) {
-  const key = request.headers.get("X-Admin-Key") ?? "";
   try {
-    const res = await fetch(`${BACKEND_URL}/api/ingest`, {
-      method: "POST",
-      headers: adminHeaders(key),
-    });
+    const res = await postBackendAdminEmpty(
+      "/api/ingest",
+      adminKeyFromRequest(request),
+    );
     const data = await res.json();
     if (!res.ok) {
       return NextResponse.json(
         { error: data.detail || data.error || "Ingestion failed" },
-        { status: res.status }
+        { status: res.status },
       );
     }
     return NextResponse.json(data);

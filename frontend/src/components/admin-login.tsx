@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Lock, Eye, EyeOff } from "lucide-react";
+import { fetchVerifyAdminKey } from "@/lib/session-auth";
 
 type Props = {
   onSuccess: (key: string) => void;
@@ -24,11 +25,7 @@ export default function AdminLoginModal({
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/auth/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key }),
-      });
+      const res = await fetchVerifyAdminKey(key);
       if (res.ok) {
         onSuccess(key);
       } else {

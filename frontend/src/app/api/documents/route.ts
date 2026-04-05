@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
-import { adminHeaders } from "@/lib/admin";
+import { adminKeyFromRequest } from "@/lib/admin";
+import {
+  nextJsonFromBackendResponse,
+  postBackendJsonAdmin,
+} from "@/lib/proxy-backend-json";
 
 export async function POST(request: NextRequest) {
-  const key = request.headers.get("X-Admin-Key") ?? "";
   try {
     const body = await request.json();
-    const res = await fetch(`${BACKEND_URL}/api/documents`, {
-      method: "POST",
-      headers: adminHeaders(key, { "Content-Type": "application/json" }),
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      return NextResponse.json(data, { status: res.status });
-    }
-    return NextResponse.json(data);
+    const res = await postBackendJsonAdmin(
+      "/api/documents",
+      body,
+      adminKeyFromRequest(request),
+    );
+    return nextJsonFromBackendResponse(res);
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

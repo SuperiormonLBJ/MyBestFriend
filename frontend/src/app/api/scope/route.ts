@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
+import { getBackendNoStore } from "@/lib/proxy-backend-json";
 
 export async function GET() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/scope`, { cache: "no-store" });
+    const res = await getBackendNoStore("/api/scope");
     if (!res.ok) return NextResponse.json({ doc_types: {}, year_range: null });
     const data = await res.json();
     return NextResponse.json(data);

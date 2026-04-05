@@ -9,7 +9,12 @@ import {
   useState,
 } from "react";
 import AdminLoginModal from "@/components/admin-login";
-import { ADMIN_SESSION_KEY, clearAdminKey, storeAdminKey } from "@/lib/session-auth";
+import {
+  ADMIN_SESSION_KEY,
+  clearAdminKey,
+  fetchVerifyAdminKey,
+  storeAdminKey,
+} from "@/lib/session-auth";
 
 type AdminWriteContextValue = {
   canModify: boolean;
@@ -35,11 +40,7 @@ export function AdminWriteProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     const stored = sessionStorage.getItem(ADMIN_SESSION_KEY) ?? "";
-    fetch("/api/auth/admin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: stored }),
-    })
+    fetchVerifyAdminKey(stored)
       .then((r) => {
         if (r.ok) {
           storeAdminKey(stored);

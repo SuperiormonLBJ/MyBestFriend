@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getStoredAdminKey } from "@/lib/session-auth";
+import { withAdminFetchInit } from "@/lib/session-auth";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { useAdminWrite } from "@/contexts/admin-write-context";
 import {
@@ -435,7 +435,7 @@ export default function KnowledgePage() {
         try {
           const res = await fetch(
             `/api/documents/${encodeURIComponent(source)}?doc_type=${encodeURIComponent(docType)}`,
-            { method: "DELETE", headers: { "X-Admin-Key": getStoredAdminKey() } }
+            withAdminFetchInit({ method: "DELETE" }),
           );
           const resData = await res.json();
           if (resData.error) throw new Error(resData.error);
@@ -456,16 +456,21 @@ export default function KnowledgePage() {
     setRestructureLoading(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/restructure", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
-        body: JSON.stringify({
-          raw_text: addForm.rawText.trim(),
-          doc_type: addForm.doc_type,
-          year: addForm.year.trim() || undefined,
-          importance: addForm.importance,
-        }),
-      });
+      const res = await fetch(
+        "/api/restructure",
+        withAdminFetchInit(
+          {
+            method: "POST",
+            body: JSON.stringify({
+              raw_text: addForm.rawText.trim(),
+              doc_type: addForm.doc_type,
+              year: addForm.year.trim() || undefined,
+              importance: addForm.importance,
+            }),
+          },
+          { json: true },
+        ),
+      );
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || resData.detail || "Restructure failed");
       if (resData.error) throw new Error(resData.error);
@@ -486,15 +491,20 @@ export default function KnowledgePage() {
     setAdding(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
-        body: JSON.stringify({
-          filename: addForm.filename,
-          doc_type: addForm.doc_type,
-          content: addForm.content,
-        }),
-      });
+      const res = await fetch(
+        "/api/documents",
+        withAdminFetchInit(
+          {
+            method: "POST",
+            body: JSON.stringify({
+              filename: addForm.filename,
+              doc_type: addForm.doc_type,
+              content: addForm.content,
+            }),
+          },
+          { json: true },
+        ),
+      );
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.detail || resData.error || `HTTP ${res.status}`);
       if (resData.error) throw new Error(resData.error);
@@ -521,7 +531,10 @@ export default function KnowledgePage() {
         setIngesting(true);
         setMessage(null);
         try {
-          const res = await fetch("/api/ingest", { method: "POST", headers: { "X-Admin-Key": getStoredAdminKey() } });
+          const res = await fetch(
+            "/api/ingest",
+            withAdminFetchInit({ method: "POST" }),
+          );
           const resData = await res.json();
           if (!res.ok) throw new Error(resData.error || resData.detail || `HTTP ${res.status}`);
           setMessage({

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getStoredAdminKey } from "@/lib/session-auth";
+import { withAdminFetchInit } from "@/lib/session-auth";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { useAdminWrite } from "@/contexts/admin-write-context";
 import { SectionCard } from "@/components/ui/section-card";
@@ -340,14 +340,16 @@ export default function EvalPage() {
   const handleSaveDataset = async () => {
     if (!(await ensureCanModify())) return;
     try {
-      const res = await fetch("/api/eval/dataset", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Key": getStoredAdminKey(),
-        },
-        body: JSON.stringify({ items: dataset }),
-      });
+      const res = await fetch(
+        "/api/eval/dataset",
+        withAdminFetchInit(
+          {
+            method: "PUT",
+            body: JSON.stringify({ items: dataset }),
+          },
+          { json: true },
+        ),
+      );
       if (res.status === 401) {
         markWriteUnauthenticated();
         throw new Error("Admin key required or invalid.");
@@ -372,10 +374,10 @@ export default function EvalPage() {
     if (!confirmed) return;
 
     try {
-      const res = await fetch("/api/eval/dataset/clear", {
-        method: "POST",
-        headers: { "X-Admin-Key": getStoredAdminKey() },
-      });
+      const res = await fetch(
+        "/api/eval/dataset/clear",
+        withAdminFetchInit({ method: "POST" }),
+      );
       if (res.status === 401) {
         markWriteUnauthenticated();
         throw new Error("Admin key required or invalid.");
@@ -494,14 +496,19 @@ export default function EvalPage() {
       setGenerating(true);
       setDatasetError(null);
       setDatasetInfo(null);
-      const res = await fetch("/api/eval/dataset/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Key": getStoredAdminKey(),
-        },
-        body: JSON.stringify({ n: clampGenerateN(generateCountInput), mode: "append" }),
-      });
+      const res = await fetch(
+        "/api/eval/dataset/generate",
+        withAdminFetchInit(
+          {
+            method: "POST",
+            body: JSON.stringify({
+              n: clampGenerateN(generateCountInput),
+              mode: "append",
+            }),
+          },
+          { json: true },
+        ),
+      );
       if (res.status === 401) {
         markWriteUnauthenticated();
         throw new Error("Admin key required or invalid.");
@@ -547,10 +554,10 @@ export default function EvalPage() {
     setJob({ status: "running", started_at: Date.now() / 1000 });
     setJobId(null);
     try {
-      const res = await fetch("/api/evaluate", {
-        method: "POST",
-        headers: { "X-Admin-Key": getStoredAdminKey() },
-      });
+      const res = await fetch(
+        "/api/evaluate",
+        withAdminFetchInit({ method: "POST" }),
+      );
       if (res.status === 401) {
         markWriteUnauthenticated();
         setJob({
@@ -578,10 +585,10 @@ export default function EvalPage() {
     setMaJob({ status: "running", started_at: Date.now() / 1000 });
     setMaJobId(null);
     try {
-      const res = await fetch("/api/evaluate/multi-agent", {
-        method: "POST",
-        headers: { "X-Admin-Key": getStoredAdminKey() },
-      });
+      const res = await fetch(
+        "/api/evaluate/multi-agent",
+        withAdminFetchInit({ method: "POST" }),
+      );
       if (res.status === 401) {
         markWriteUnauthenticated();
         setMaJob({ status: "error", error: "Admin key required or invalid." });

@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
-import { adminHeaders } from "@/lib/admin";
+import { adminKeyFromRequest } from "@/lib/admin";
+import {
+  nextJsonFromBackend,
+  postBackendAdminEmpty,
+} from "@/lib/proxy-backend-json";
 
 export async function POST(request: NextRequest) {
-  const key = request.headers.get("X-Admin-Key") ?? "";
   try {
-    const res = await fetch(`${BACKEND_URL}/api/evaluate`, {
-      method: "POST",
-      headers: adminHeaders(key),
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: err }, { status: res.status });
-    }
-    return NextResponse.json(await res.json());
+    const res = await postBackendAdminEmpty(
+      "/api/evaluate",
+      adminKeyFromRequest(request),
+    );
+    return nextJsonFromBackend(res);
   } catch (err) {
     console.error("Evaluate start error:", err);
-    return NextResponse.json({ error: "Failed to start evaluation" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to start evaluation" },
+      { status: 500 },
+    );
   }
 }

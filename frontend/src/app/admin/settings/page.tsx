@@ -17,7 +17,7 @@ import { useState, useEffect } from "react";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { useAdminWrite } from "@/contexts/admin-write-context";
-import { getStoredAdminKey } from "@/lib/session-auth";
+import { withAdminFetchInit } from "@/lib/session-auth";
 
 const EMBEDDING_MODELS = [
   "text-embedding-3-large",
@@ -114,11 +114,13 @@ export default function SettingsPage() {
           return v != null && v !== "";
         })
       ) as Record<string, string>;
-      const res = await fetch("/api/config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "X-Admin-Key": getStoredAdminKey() },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        "/api/config",
+        withAdminFetchInit(
+          { method: "PUT", body: JSON.stringify(payload) },
+          { json: true },
+        ),
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `HTTP ${res.status}`);

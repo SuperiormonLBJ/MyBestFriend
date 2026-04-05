@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { BACKEND_URL } from "@/lib/backend";
+import { backendFetch } from "@/lib/proxy-backend-json";
 
 const LOG_TAG = "[chat/stream]";
 
@@ -19,10 +20,14 @@ export async function POST(request: NextRequest) {
     const fromEnv = !!(process.env.NEXT_PUBLIC_BACKEND_URL ?? process.env.BACKEND_URL);
     console.log(LOG_TAG, "fetching backend", { fromEnv, url: url.replace(/^https?:\/\/[^/]+/, "***"), messageLen: message.length, job_mode: !!job_mode });
 
-    const res = await fetch(url, {
+    const res = await backendFetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history: history || [], job_mode: !!job_mode }),
+      body: JSON.stringify({
+        message,
+        history: history || [],
+        job_mode: !!job_mode,
+      }),
     });
 
     const contentType = res.headers.get("content-type") ?? "";

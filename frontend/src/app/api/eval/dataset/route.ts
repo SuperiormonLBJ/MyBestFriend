@@ -1,47 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BACKEND_URL } from "@/lib/backend";
-import { adminHeaders } from "@/lib/admin";
+import { adminKeyFromRequest } from "@/lib/admin";
+import {
+  getBackendNoStore,
+  nextJsonFromBackend,
+  putBackendJsonTextAdmin,
+} from "@/lib/proxy-backend-json";
 
 export async function GET() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/eval/dataset`, {
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: err }, { status: res.status });
-    }
-    return NextResponse.json(await res.json());
+    const res = await getBackendNoStore("/api/eval/dataset");
+    return nextJsonFromBackend(res);
   } catch (err) {
     console.error("Eval dataset load error:", err);
-    return NextResponse.json({ error: "Failed to load evaluation dataset" }, {
-      status: 500,
-    });
+    return NextResponse.json(
+      { error: "Failed to load evaluation dataset" },
+      { status: 500 },
+    );
   }
 }
 
 export async function PUT(request: NextRequest) {
-  const key = request.headers.get("X-Admin-Key") ?? "";
   try {
     const body = await request.text();
-    const res = await fetch(`${BACKEND_URL}/api/eval/dataset`, {
-      method: "PUT",
-      headers: {
-        ...adminHeaders(key, { "Content-Type": "application/json" }),
-      },
+    const res = await putBackendJsonTextAdmin(
+      "/api/eval/dataset",
       body,
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: err }, { status: res.status });
-    }
-    return NextResponse.json(await res.json());
+      adminKeyFromRequest(request),
+    );
+    return nextJsonFromBackend(res);
   } catch (err) {
     console.error("Eval dataset save error:", err);
-    return NextResponse.json({ error: "Failed to save evaluation dataset" }, {
-      status: 500,
-    });
+    return NextResponse.json(
+      { error: "Failed to save evaluation dataset" },
+      { status: 500 },
+    );
   }
 }
-
