@@ -818,7 +818,7 @@ class EvalGenerateRequest(BaseModel):
 @app.post("/api/eval/dataset/generate", dependencies=[AdminAuth])
 def api_generate_eval_dataset(request: EvalGenerateRequest):
     """AI-generate eval dataset rows based on existing knowledge documents."""
-    n = request.n or 20
+    n = max(1, min(200, int(request.n or 20)))
     mode = (request.mode or "replace").lower()
     if mode not in ("replace", "append"):
         mode = "replace"
@@ -858,7 +858,13 @@ def api_generate_eval_dataset(request: EvalGenerateRequest):
     response = llm.invoke(
         [
             SystemMessage(content=system_text),
-            HumanMessage(content="Generate the evaluation dataset JSON now."),
+            HumanMessage(
+                content=(
+                    f"Generate the evaluation dataset as a JSON array with exactly {n} objects. "
+                    "Each object must match the schema in your instructions. "
+                    f"Output no fewer than {n} and no more than {n} array elements."
+                )
+            ),
         ]
     )
     raw = (response.content or "").strip()
@@ -880,25 +886,36 @@ def api_generate_eval_dataset(request: EvalGenerateRequest):
     if not isinstance(data, list):
         raise HTTPException(status_code=500, detail="Model output must be a JSON array.")
 
-    tests: list[TestQuestion] = []
+    generated: list[TestQuestion] = []
     for idx, item in enumerate(data, start=1):
         if not isinstance(item, dict):
             continue
         try:
-            tests.append(_row_to_test_question(item))
+            generated.append(_row_to_test_question(item))
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Invalid item at index {idx}: {e}")
 
-    if not tests:
+    if not generated:
         raise HTTPException(status_code=500, detail="No valid eval rows generated.")
+
+    generated = generated[:n]
 
     replace = mode == "replace"
     if not replace:
         existing = load_eval_rows_from_supabase()
-        tests = existing + tests
+        tests = existing + generated
+    else:
+        tests = generated
 
     save_eval_rows_to_supabase(tests, replace=True)
-    return {"status": "ok", "count": len(tests), "mode": mode}
+    return {
+        "status": "ok",
+        "count": len(generated),
+        "generated_count": len(generated),
+        "requested_n": n,
+        "total_count": len(tests),
+        "mode": mode,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -180,7 +180,17 @@ export default function EvalPage() {
   const [datasetDirty, setDatasetDirty] = useState(false);
   const [datasetInfo, setDatasetInfo] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [generateCount, setGenerateCount] = useState<number>(20);
+  const [generateCountInput, setGenerateCountInput] = useState("20");
+
+  const clampGenerateN = (raw: string): number => {
+    const n = Number.parseInt(raw, 10);
+    if (!Number.isFinite(n)) return 20;
+    return Math.min(200, Math.max(1, n));
+  };
+
+  const normalizeGenerateCountInput = () => {
+    setGenerateCountInput(String(clampGenerateN(generateCountInput)));
+  };
 
   // Load last persisted result from Supabase on mount
   useEffect(() => {
@@ -477,7 +487,7 @@ export default function EvalPage() {
           "Content-Type": "application/json",
           "X-Admin-Key": getStoredAdminKey(),
         },
-        body: JSON.stringify({ n: generateCount, mode: "append" }),
+        body: JSON.stringify({ n: clampGenerateN(generateCountInput), mode: "append" }),
       });
       if (res.status === 401) {
         markWriteUnauthenticated();
@@ -489,8 +499,22 @@ export default function EvalPage() {
       }
       const body = await res.json();
       await loadDataset();
-      if (typeof body.count === "number") {
-        setDatasetInfo(`AI generated ${body.count} test cases.`);
+      const gen =
+        typeof body.generated_count === "number"
+          ? body.generated_count
+          : typeof body.count === "number"
+            ? body.count
+            : null;
+      const reqN =
+        typeof body.requested_n === "number"
+          ? body.requested_n
+          : clampGenerateN(generateCountInput);
+      if (gen !== null) {
+        setDatasetInfo(
+          gen < reqN
+            ? `AI generated ${gen} of ${reqN} requested test cases (model returned fewer valid rows).`
+            : `AI generated ${gen} test cases.`
+        );
       } else {
         setDatasetInfo("AI generation completed.");
       }
@@ -948,18 +972,16 @@ export default function EvalPage() {
                   <div className="flex items-center gap-1 text-[10px] text-[var(--foreground-muted)]">
                     <span>AI count:</span>
                     <input
-                      type="number"
-                      min={1}
-                      max={200}
-                      value={generateCount}
-                      onChange={(e) =>
-                        setGenerateCount(
-                          Math.min(
-                            200,
-                            Math.max(1, Number(e.target.value) || 1)
-                          )
-                        )
-                      }
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      aria-label="Number of AI-generated eval rows"
+                      value={generateCountInput}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/\D/g, "");
+                        setGenerateCountInput(v);
+                      }}
+                      onBlur={normalizeGenerateCountInput}
                       className="w-16 rounded border border-[var(--border)] bg-transparent px-1 py-0.5 text-[10px]"
                     />
                   </div>
