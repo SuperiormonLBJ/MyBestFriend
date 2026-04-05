@@ -1,8 +1,59 @@
 "use client";
 
 import Link from "next/link";
+import type { LucideIcon } from "lucide-react";
 import { Database, Settings, ScrollText, FlaskConical } from "lucide-react";
 import { SpotlightCard } from "@/components/ui/spotlight-card";
+
+const ADMIN_LINKS: {
+  href: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  spotlightColor?: string;
+  iconWrapClass: string;
+  iconClass: string;
+}[] = [
+  {
+    href: "/admin/knowledge",
+    title: "Knowledge Base",
+    description: "View, add, and delete documents in the vector store",
+    icon: Database,
+    iconWrapClass:
+      "h-14 w-14 flex items-center justify-center rounded-xl bg-neutral-800 border border-neutral-700",
+    iconClass: "text-neutral-200 h-7 w-7",
+  },
+  {
+    href: "/admin/settings",
+    title: "Settings",
+    description: "Configure display options, models, and notifications",
+    icon: Settings,
+    spotlightColor: "rgba(14, 165, 233, 0.25)",
+    iconWrapClass:
+      "h-14 w-14 flex items-center justify-center rounded-xl bg-sky-900/20 border border-sky-800/50",
+    iconClass: "text-sky-300 h-7 w-7",
+  },
+  {
+    href: "/admin/prompts",
+    title: "Prompts",
+    description: "Edit LLM system prompts stored in Supabase",
+    icon: ScrollText,
+    spotlightColor: "rgba(168, 85, 247, 0.25)",
+    iconWrapClass:
+      "h-14 w-14 flex items-center justify-center rounded-xl bg-purple-900/20 border border-purple-800/50",
+    iconClass: "text-purple-300 h-7 w-7",
+  },
+  {
+    href: "/admin/eval",
+    title: "Evaluation",
+    description: "Run RAG evaluation and visualize results",
+    icon: FlaskConical,
+    spotlightColor: "rgba(13, 148, 136, 0.25)",
+    iconWrapClass:
+      "h-14 w-14 flex items-center justify-center rounded-xl bg-teal-900/20 border border-teal-800/50",
+    iconClass: "text-teal-300 h-7 w-7",
+  },
+];
 
 export default function AdminPage() {
   return (
@@ -22,70 +73,34 @@ export default function AdminPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-8">
         <div className="mx-auto flex max-w-2xl flex-col gap-6">
-          <Link href="/admin/knowledge" className="block">
-            <SpotlightCard className="p-8 flex flex-col gap-5 cursor-pointer">
-              <div className="h-14 w-14 flex items-center justify-center rounded-xl bg-neutral-800 border border-neutral-700">
-                <Database className="text-neutral-200 h-7 w-7" strokeWidth={2} />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-2">Knowledge Base</h3>
-                <p className="text-base text-neutral-400">
-                  View, add, and delete documents in the vector store
-                </p>
-              </div>
-            </SpotlightCard>
-          </Link>
-
-          <Link href="/admin/settings" className="block">
-            <SpotlightCard
-              className="p-8 flex flex-col gap-5 cursor-pointer"
-              spotlightColor="rgba(14, 165, 233, 0.25)"
-            >
-              <div className="h-14 w-14 flex items-center justify-center rounded-xl bg-sky-900/20 border border-sky-800/50">
-                <Settings className="text-sky-300 h-7 w-7" strokeWidth={2} />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-2">Settings</h3>
-                <p className="text-base text-neutral-400">
-                  Configure display options, models, and notifications
-                </p>
-              </div>
-            </SpotlightCard>
-          </Link>
-
-          <Link href="/admin/prompts" className="block">
-            <SpotlightCard
-              className="p-8 flex flex-col gap-5 cursor-pointer"
-              spotlightColor="rgba(168, 85, 247, 0.25)"
-            >
-              <div className="h-14 w-14 flex items-center justify-center rounded-xl bg-purple-900/20 border border-purple-800/50">
-                <ScrollText className="text-purple-300 h-7 w-7" strokeWidth={2} />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-2">Prompts</h3>
-                <p className="text-base text-neutral-400">
-                  Edit LLM system prompts stored in Supabase
-                </p>
-              </div>
-            </SpotlightCard>
-          </Link>
-
-          <Link href="/admin/eval" className="block">
-            <SpotlightCard
-              className="p-8 flex flex-col gap-5 cursor-pointer"
-              spotlightColor="rgba(13, 148, 136, 0.25)"
-            >
-              <div className="h-14 w-14 flex items-center justify-center rounded-xl bg-teal-900/20 border border-teal-800/50">
-                <FlaskConical className="text-teal-300 h-7 w-7" strokeWidth={2} />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-2">Evaluation</h3>
-                <p className="text-base text-neutral-400">
-                  Run RAG evaluation and visualize results
-                </p>
-              </div>
-            </SpotlightCard>
-          </Link>
+          {ADMIN_LINKS.map(
+            ({
+              href,
+              title,
+              description,
+              icon: Icon,
+              spotlightColor,
+              iconWrapClass,
+              iconClass,
+            }) => (
+              <Link key={href} href={href} className="block">
+                <SpotlightCard
+                  className="p-8 flex flex-col gap-5 cursor-pointer"
+                  {...(spotlightColor ? { spotlightColor } : {})}
+                >
+                  <div className={iconWrapClass}>
+                    <Icon className={iconClass} strokeWidth={2} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-white mb-2">
+                      {title}
+                    </h3>
+                    <p className="text-base text-neutral-400">{description}</p>
+                  </div>
+                </SpotlightCard>
+              </Link>
+            ),
+          )}
         </div>
       </div>
     </div>

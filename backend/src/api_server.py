@@ -5,11 +5,7 @@ Run with: uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
 import threading
 import time
 import uuid
-import smtplib
-import os
 import json
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -27,6 +23,7 @@ from utils.config_loader import ConfigLoader
 from utils.prompts import get_reference_template
 from utils.prompt_manager import get_prompt, get_all_prompts, update_prompt, get_default_content, sync_defaults
 from utils.supabase_client import supabase_client
+from utils.smtp_send import send_smtp_message
 from .document_ops import delete_document, add_document
 from .rag_ingestion import load_document, create_chunks_markdown, embed_chunks, _parse_md_frontmatter
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -45,6 +42,14 @@ from utils.base_models import TestQuestion
 
 config = ConfigLoader()
 app = FastAPI(title="MyBestFriend API")
+
+
+def _reraise_http_else_500(exc: BaseException, *, log_traceback: bool) -> None:
+    if isinstance(exc, HTTPException):
+        raise exc
+    if log_traceback:
+        _traceback.print_exc()
+    raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +193,14 @@ def _guardrail_checker(message: str) -> bool:
 _GUARDRAIL_REPLY = f"This is a chatbot designed for queries related to {owner_name} only."
 
 
+def _sse_streaming_response(gen):
+    return StreamingResponse(
+        gen,
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     if not request.job_mode and not _guardrail_checker(request.message):
@@ -213,11 +226,7 @@ def chat_stream(request: ChatRequest):
         def _guardrail_stream():
             yield f"data: {json.dumps({'token': _GUARDRAIL_REPLY})}\n\n"
             yield f"data: {json.dumps({'done': True, 'final': _GUARDRAIL_REPLY, 'sources': []})}\n\n"
-        return StreamingResponse(
-            _guardrail_stream(),
-            media_type="text/event-stream",
-            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
-        )
+        return _sse_streaming_response(_guardrail_stream())
 
     mode = _resolve_mode(request)
 
@@ -233,11 +242,7 @@ def chat_stream(request: ChatRequest):
         for event in gen:
             yield f"data: {json.dumps(event)}\n\n"
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
-    )
+    return _sse_streaming_response(event_stream())
 
 
 @app.get("/api/scope")
@@ -276,11 +281,8 @@ def api_job_cover_letter(request: JobPrepRequest):
             culture=ctx["culture"],
             keywords=ctx["keywords"],
         )
-    except HTTPException:
-        raise
     except Exception as e:
-        _traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        _reraise_http_else_500(e, log_traceback=True)
 
 
 @app.post("/api/job/prepare", response_model=JobPrepFullResponse)
@@ -337,11 +339,8 @@ def api_job_prepare(request: JobPrepRequest):
             resume_suggestions=resume_suggestions,
             interview_questions=interview_questions,
         )
-    except HTTPException:
-        raise
     except Exception as e:
-        _traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        _reraise_http_else_500(e, log_traceback=True)
 
 
 # ---------------------------------------------------------------------------
@@ -408,33 +407,18 @@ def _send_inquiry_email(requester_name: str, requester_email: str, question: str
     if not recipient:
         raise ValueError("RECIPIENT_EMAIL is not configured.")
 
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = config.get_smtp_user()
-    smtp_password = config.get_smtp_password()
-
-    if not smtp_user or not smtp_password:
-        raise ValueError("SMTP_USER and SMTP_PASSWORD environment variables are required.")
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"[MyBestFriend] Question from {requester_name}"
-    msg["From"] = smtp_user
-    msg["To"] = recipient
-    msg["Reply-To"] = requester_email
-
     body = (
         f"Someone asked a question that wasn't in your knowledge base.\n\n"
         f"Name: {requester_name}\n"
         f"Email: {requester_email}\n\n"
         f"Question:\n{question}\n"
     )
-    msg.attach(MIMEText(body, "plain"))
-
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(smtp_user, smtp_password)
-        server.sendmail(smtp_user, recipient, msg.as_string())
+    send_smtp_message(
+        recipient,
+        f"[MyBestFriend] Question from {requester_name}",
+        body,
+        reply_to=requester_email,
+    )
 
 
 class ContactRequest(BaseModel):
@@ -697,28 +681,30 @@ _eval_jobs: dict[str, dict] = {}
 _eval_results: dict[str, dict] = {}  # multi-agent eval job results
 
 
-def _save_eval_result(result: dict) -> None:
-    """Persist the latest eval result to the eval_results table."""
+def _upsert_eval_results_row(fields: dict) -> None:
     try:
         supabase_client.table("eval_results").upsert(
-            {
-                "id": 1,  # single-row table — always overwrite the same row
-                "status": result.get("status"),
-                "finished_at": result.get("finished_at"),
-                "result": result.get("result"),
-            },
+            {"id": 1, **fields},
             on_conflict="id",
         ).execute()
     except Exception as e:
         print(f"[eval] Warning: could not persist result to Supabase: {e}")
 
 
-def _load_eval_result() -> dict | None:
-    """Load the last persisted eval result from the eval_results table."""
+def _save_eval_result(result: dict) -> None:
+    """Persist the latest eval result to the eval_results table."""
+    _upsert_eval_results_row({
+        "status": result.get("status"),
+        "finished_at": result.get("finished_at"),
+        "result": result.get("result"),
+    })
+
+
+def _fetch_eval_results_row() -> dict | None:
     try:
         row = (
             supabase_client.table("eval_results")
-            .select("status, finished_at, result")
+            .select("status, finished_at, result, multi_agent_result")
             .eq("id", 1)
             .execute()
         )
@@ -728,6 +714,18 @@ def _load_eval_result() -> dict | None:
     except Exception as e:
         print(f"[eval] Warning: could not load result from Supabase: {e}")
     return None
+
+
+def _load_eval_result() -> dict | None:
+    """Load the last persisted eval result from the eval_results table."""
+    row = _fetch_eval_results_row()
+    if not row:
+        return None
+    return {
+        "status": row.get("status"),
+        "finished_at": row.get("finished_at"),
+        "result": row.get("result"),
+    }
 
 
 @app.post("/api/evaluate")
@@ -778,35 +776,16 @@ def api_get_latest_evaluation():
 
 def _save_multi_agent_eval_result(result: dict) -> None:
     """Persist the latest multi-agent eval result to the multi_agent_result column (id=1)."""
-    try:
-        supabase_client.table("eval_results").upsert(
-            {
-                "id": 1,
-                "multi_agent_result": result,
-            },
-            on_conflict="id",
-        ).execute()
-    except Exception as e:
-        import traceback
-        print(f"[multi-agent eval] Warning: could not persist result to Supabase: {e}")
-        traceback.print_exc()
+    _upsert_eval_results_row({"multi_agent_result": result})
 
 
 def _load_multi_agent_eval_result() -> dict | None:
     """Load the last persisted multi-agent eval result from the multi_agent_result column (id=1)."""
-    try:
-        row = (
-            supabase_client.table("eval_results")
-            .select("multi_agent_result")
-            .eq("id", 1)
-            .execute()
-        )
-        rows = row.data or []
-        if rows and rows[0].get("multi_agent_result"):
-            return rows[0]["multi_agent_result"]
-    except Exception as e:
-        print(f"[multi-agent eval] Warning: could not load result from Supabase: {e}")
-    return None
+    row = _fetch_eval_results_row()
+    if not row:
+        return None
+    ma = row.get("multi_agent_result")
+    return ma if ma else None
 
 
 @app.get("/api/evaluate/multi-agent/latest")
@@ -1040,10 +1019,8 @@ def api_agent_trace(run_id: str):
         if not rows:
             raise HTTPException(status_code=404, detail=f"No trace found for run_id={run_id}")
         return rows[0]
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _reraise_http_else_500(e, log_traceback=False)
 
 
 @app.get("/api/agent/pending-reviews")

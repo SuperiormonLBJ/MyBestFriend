@@ -15,6 +15,7 @@ All retrieval logic lives in rag_retrieval.py and is reused unchanged.
 import utils.path_setup  # noqa: F401
 
 from src.agent_state import AgentResult
+from src.domain_constants import DOMAIN_DOC_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -32,14 +33,6 @@ def estimate_token_count(text: str) -> int:
 # ---------------------------------------------------------------------------
 # Domain metadata
 # ---------------------------------------------------------------------------
-
-DOMAIN_DOC_TYPES: dict[str, list[str]] = {
-    "career_agent":   ["career", "work", "job"],
-    "project_agent":  ["project"],
-    "skills_agent":   ["cv", "skills", "education"],
-    "personal_agent": ["personal", "hobby", "life"],
-    "job_prep_agent": ["career", "project", "cv", "skills"],
-}
 
 # Option A: domain-specialized query suffixes appended to the rewritten query.
 # These expand the search vocabulary for each domain without an extra LLM call.
@@ -401,11 +394,8 @@ def send_unknown_query_notification(query: str, run_id: str = "") -> None:
     Send a system email notification when a query could not be answered.
     Non-blocking: caller should run this in a background thread.
     """
-    import os
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
     from utils.config_loader import ConfigLoader
+    from utils.smtp_send import send_smtp_message
 
     cfg = ConfigLoader()
     recipient = cfg.get_recipient_email()
@@ -413,19 +403,11 @@ def send_unknown_query_notification(query: str, run_id: str = "") -> None:
         print("[notification_agent] RECIPIENT_EMAIL not configured — skipping notification")
         return
 
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = cfg.get_smtp_user()
     smtp_password = cfg.get_smtp_password()
-
     if not smtp_user or not smtp_password:
         print("[notification_agent] SMTP credentials not configured — skipping notification")
         return
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "[MyBestFriend] Unknown query received"
-    msg["From"] = smtp_user
-    msg["To"] = recipient
 
     body = (
         f"Your digital twin could not answer a visitor's question.\n\n"
@@ -433,14 +415,12 @@ def send_unknown_query_notification(query: str, run_id: str = "") -> None:
         f"Question:\n{query}\n\n"
         f"Consider adding this topic to your knowledge base."
     )
-    msg.attach(MIMEText(body, "plain"))
-
     try:
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_user, smtp_password)
-            server.sendmail(smtp_user, recipient, msg.as_string())
+        send_smtp_message(
+            recipient,
+            "[MyBestFriend] Unknown query received",
+            body,
+        )
         print(f"[notification_agent] Notification sent to {recipient}")
     except Exception as e:
         print(f"[notification_agent] Email send error (non-fatal): {e}")

@@ -5,6 +5,7 @@ that a downstream LLM agent can use for richer, task-oriented answers.
 """
 import utils.path_setup  # noqa: F401
 
+from src.domain_constants import DOMAIN_DOC_TYPE_MAP
 from utils.supabase_client import supabase_client
 
 
@@ -29,29 +30,6 @@ def summarize_time_period(year: str) -> str:
         return f"Error retrieving data for year {year}: {e}"
 
 
-def list_projects() -> list:
-    """
-    Return a sorted list of project titles/sources from the vector store.
-    Useful for 'list all my projects' queries.
-    """
-    try:
-        resp = (
-            supabase_client.table("document_chunks")
-            .select("metadata")
-            .filter("metadata->>doc_type", "eq", "project")
-            .execute()
-        )
-        titles: set = set()
-        for row in (resp.data or []):
-            meta = row.get("metadata") or {}
-            title = meta.get("title") or meta.get("source", "").replace(".md", "")
-            if title:
-                titles.add(title)
-        return sorted(titles)
-    except Exception:
-        return []
-
-
 def get_knowledge_scope() -> dict:
     """
     Return document type counts and year ranges for knowledge-scope display in the UI.
@@ -72,16 +50,6 @@ def get_knowledge_scope() -> dict:
         return {"doc_types": counts, "year_range": year_range}
     except Exception:
         return {"doc_types": {}, "year_range": None}
-
-
-DOMAIN_DOC_TYPE_MAP: dict[str, str] = {
-    "projects": "project",
-    "jobs": "career",
-    "skills": "cv",
-    "education": "education",
-    "hobbies": "personal",
-    "personal": "personal",
-}
 
 
 def list_domain_items(domain: str) -> list[dict]:
@@ -108,6 +76,14 @@ def list_domain_items(domain: str) -> list[dict]:
         return sorted(seen.values(), key=lambda x: (x["year"], x["title"]), reverse=True)
     except Exception:
         return []
+
+
+def list_projects() -> list:
+    """
+    Return a sorted list of project titles/sources from the vector store.
+    Useful for 'list all my projects' queries.
+    """
+    return sorted({item["title"] for item in list_domain_items("projects")})
 
 
 def generate_bio(context: str, style: str = "professional") -> str:
