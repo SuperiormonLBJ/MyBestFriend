@@ -691,18 +691,34 @@ def api_get_latest_evaluation():
     return data
 
 
+def _save_multi_agent_eval_result(result: dict) -> None:
+    """Persist the latest multi-agent eval result to the multi_agent_result column (id=1)."""
+    try:
+        supabase_client.table("eval_results").upsert(
+            {
+                "id": 1,
+                "multi_agent_result": result,
+            },
+            on_conflict="id",
+        ).execute()
+    except Exception as e:
+        import traceback
+        print(f"[multi-agent eval] Warning: could not persist result to Supabase: {e}")
+        traceback.print_exc()
+
+
 def _load_multi_agent_eval_result() -> dict | None:
-    """Load the last persisted multi-agent eval result from the eval_results table (id=2)."""
+    """Load the last persisted multi-agent eval result from the multi_agent_result column (id=1)."""
     try:
         row = (
             supabase_client.table("eval_results")
-            .select("status, finished_at, result")
-            .eq("id", 2)
+            .select("multi_agent_result")
+            .eq("id", 1)
             .execute()
         )
         rows = row.data or []
-        if rows:
-            return rows[0]
+        if rows and rows[0].get("multi_agent_result"):
+            return rows[0]["multi_agent_result"]
     except Exception as e:
         print(f"[multi-agent eval] Warning: could not load result from Supabase: {e}")
     return None
@@ -727,6 +743,7 @@ def api_get_eval_dataset():
             "ground_truth": t.ground_truth,
             "category": t.category,
             "keywords": t.keywords,
+            "expected_agents": t.expected_agents,
         }
         for t in tests
     ]
@@ -1016,13 +1033,7 @@ def api_evaluate_multi_agent(_: None = AdminAuth):
                 "result": report.model_dump(),
             }
             _eval_results[job_id] = payload
-            try:
-                supabase_client.table("eval_results").upsert(
-                    {"id": 2, **payload},
-                    on_conflict="id",
-                ).execute()
-            except Exception as db_err:
-                print(f"[multi-agent eval] DB write warning (non-fatal): {db_err}")
+            _save_multi_agent_eval_result(payload)
         except Exception as e:
             _eval_results[job_id] = {"status": "error", "error": str(e)}
 

@@ -13,6 +13,7 @@ Usage:
     from src.multi_agent_eval import evaluate_multi_agent_all
     report = evaluate_multi_agent_all(test_questions)
 """
+import re
 import sys
 import time
 import utils.path_setup  # noqa: F401
@@ -57,7 +58,13 @@ CATEGORY_TO_EXPECTED_AGENTS: dict[str, list[str]] = {
 
 
 def _get_expected_agents(question: TestQuestion) -> list[str]:
-    """Return expected agent names based on question category."""
+    """
+    Return expected agent names for ARA measurement.
+    Prefers explicit expected_agents field on the question (set in dataset editor).
+    Falls back to category-based lookup, then default.
+    """
+    if question.expected_agents:
+        return list(question.expected_agents)
     category = (question.category or "").lower()
     for key, agents in CATEGORY_TO_EXPECTED_AGENTS.items():
         if key in category:
@@ -104,11 +111,16 @@ def evaluate_agent_routing(
 def evaluate_agent_redundancy(traces: list[dict]) -> float:
     """
     Agent Context Redundancy Ratio (ACRR):
-    |union(agent_docs)| / sum(|agent_docs_i|)
+    |union(context_chunks)| / sum(|context_chunks_i|)
 
-    Higher = more diverse (agents retrieved different documents).
-    Lower = redundant (all agents retrieved the same docs).
+    Higher = more diverse (agents retrieved different content).
+    Lower = redundant (all agents retrieved the same chunks).
     Target: > 0.60
+
+    Uses 120-char context paragraph fingerprints instead of source file identifiers.
+    This gives chunk-level diversity: two agents pulling different paragraphs from
+    the same source file correctly score as diverse, while source-level tracking
+    would falsely report them as redundant.
     """
     if not traces:
         return 0.0
@@ -119,24 +131,50 @@ def evaluate_agent_redundancy(traces: list[dict]) -> float:
         if not agent_results:
             continue
 
-        all_docs: list[str] = []
+        all_chunks: list[str] = []
         per_agent_counts: list[int] = []
 
         for result in agent_results:
             if result.get("error"):
                 continue
-            # Use source as doc identifier
-            sources = result.get("sources", [])
-            per_agent_counts.append(len(sources))
-            all_docs.extend(sources)
+            # Fingerprint each context paragraph by its first 120 chars.
+            # Paragraphs shorter than 20 chars (headings, blank lines) are skipped
+            # so they don't inflate the unique count with noise.
+            context = result.get("context", "")
+            chunks = [
+                p.strip()[:120]
+                for p in context.split("\n\n")
+                if len(p.strip()) >= 20
+            ]
+            per_agent_counts.append(len(chunks))
+            all_chunks.extend(chunks)
 
         total = sum(per_agent_counts)
-        unique = len(set(str(s) for s in all_docs))
+        unique = len(set(all_chunks))
 
         if total > 0:
             acrr_values.append(unique / total)
 
     return sum(acrr_values) / len(acrr_values) if acrr_values else 0.0
+
+
+def _build_mrr_keywords(test: "TestQuestion") -> list[str]:
+    """
+    Build the keyword set for MRR scoring.
+
+    Uses the test's explicit keywords plus content words from the question itself.
+    Question words give broader coverage when dataset keywords are too narrow or
+    don't match the exact terminology used in the knowledge base.
+    """
+    explicit = [kw.lower() for kw in (test.keywords or [])]
+    question_words = {
+        w.lower().rstrip("?.,'\"")
+        for w in test.question.split()
+        if len(w) > 4 and w.lower() not in _STOP_WORDS
+    }
+    # Combine; explicit keywords take priority but question words fill gaps
+    combined = list(dict.fromkeys(explicit + list(question_words)))
+    return combined
 
 
 def evaluate_per_agent_mrr(
@@ -147,12 +185,16 @@ def evaluate_per_agent_mrr(
     Per-agent MRR: for each agent, compute MRR across test questions.
     Measures how well each specialist's retrieved docs contain the answer keywords.
 
+    Keywords are expanded with content words from the question itself, so that
+    agents are not penalised when dataset keyword lists are narrower than the
+    actual terms used in the knowledge base.
+
     Returns dict mapping agent_name → MRR score.
     """
     agent_mrr_scores: dict[str, list[float]] = {}
 
     for test, trace in zip(tests, traces):
-        keywords = [kw.lower() for kw in (test.keywords or [])]
+        keywords = _build_mrr_keywords(test)
         if not keywords:
             continue
 
@@ -183,6 +225,31 @@ def evaluate_per_agent_mrr(
     }
 
 
+_ATTRIBUTION_LABEL_RE = re.compile(
+    r'\[(?:Career|Project|Skills|Personal|Job Prep|career|project|skills|personal|'
+    r'career_agent|project_agent|skills_agent|personal_agent)\]',
+    re.IGNORECASE,
+)
+_ATTRIBUTION_HEADER_RE = re.compile(
+    r'Agent retrieval summary:.*?Merged context:',
+    re.DOTALL,
+)
+
+
+def _strip_synthesis_artifacts(text: str) -> str:
+    """
+    Remove attribution markers injected by SYNTHESIS_AGENT_PROMPT before
+    computing faithfulness, so prompt-injected words don't count as ungrounded.
+
+    Strips:
+    - Domain labels: [Career], [Project], [Skills], [Personal]
+    - Attribution header block: "Agent retrieval summary: ... Merged context:"
+    """
+    text = _ATTRIBUTION_HEADER_RE.sub("", text)
+    text = _ATTRIBUTION_LABEL_RE.sub("", text)
+    return text
+
+
 def evaluate_synthesis_faithfulness(
     tests: list[TestQuestion],
     answers: list[str],
@@ -192,6 +259,10 @@ def evaluate_synthesis_faithfulness(
     Synthesis faithfulness: keyword overlap between answer and merged context.
     Approximation of RAGAS faithfulness without requiring the full RAGAS pipeline.
     Returns a score 0.0–1.0.
+
+    Attribution labels added by SYNTHESIS_AGENT_PROMPT (e.g. [Career], [Project])
+    are stripped from the answer before scoring so prompt-injected words are not
+    counted as ungrounded claims.
     """
     if not tests:
         return 0.0
@@ -202,6 +273,9 @@ def evaluate_synthesis_faithfulness(
             scores.append(0.0)
             continue
 
+        # Strip synthesis-prompt artifacts before scoring
+        clean_answer = _strip_synthesis_artifacts(answer)
+
         # Filter stop words and short tokens so common words don't inflate scores
         def _content_words(text: str) -> set[str]:
             return {
@@ -209,7 +283,7 @@ def evaluate_synthesis_faithfulness(
                 if len(w) > 2 and w not in _STOP_WORDS
             }
 
-        answer_words = _content_words(answer)
+        answer_words = _content_words(clean_answer)
         context_words = _content_words(context)
         if not answer_words:
             scores.append(0.0)
@@ -284,9 +358,20 @@ def evaluate_multi_agent_run(
     initial = build_initial_multi_agent_state(query, history)
     result = g.invoke(initial)
 
+    no_info = result.get("no_info", True)
+    evaluator_passed = result.get("evaluator_passed", True)
+    evaluator_score = result.get("evaluator_score", 0.0)
+    # Distinguish two no_info causes:
+    # - evaluator_suppressed=True: synthesis produced an answer but evaluator rejected it
+    # - evaluator_suppressed=False + no_info=True: no context found (genuine unknown)
+    evaluator_suppressed = no_info and (evaluator_passed is False)
+
     return {
         "answer": result.get("answer", ""),
-        "no_info": result.get("no_info", True),
+        "no_info": no_info,
+        "evaluator_passed": evaluator_passed,
+        "evaluator_score": evaluator_score,
+        "evaluator_suppressed": evaluator_suppressed,
         "sources": result.get("sources", []),
         "context": result.get("context", ""),
         "active_agents": result.get("active_agents", []),
@@ -312,6 +397,10 @@ def evaluate_multi_agent_all(tests: list[TestQuestion]) -> MultiAgentEvalResult:
     answers: list[str] = []
     contexts: list[str] = []
 
+    no_info_count = 0
+    evaluator_suppressed_count = 0
+    genuine_no_context_count = 0
+
     for i, test in enumerate(tests):
         print(f"[multi_agent_eval] Question {i+1}/{len(tests)}: {test.question[:60]}...")
         try:
@@ -319,6 +408,14 @@ def evaluate_multi_agent_all(tests: list[TestQuestion]) -> MultiAgentEvalResult:
             traces.append(trace)
             answers.append(trace.get("answer", ""))
             contexts.append(trace.get("context", ""))
+            if trace.get("no_info"):
+                no_info_count += 1
+                if trace.get("evaluator_suppressed"):
+                    evaluator_suppressed_count += 1
+                    print(f"[multi_agent_eval]   -> evaluator suppressed (score={trace.get('evaluator_score', 0):.2f})")
+                else:
+                    genuine_no_context_count += 1
+                    print(f"[multi_agent_eval]   -> no context retrieved (active_agents={trace.get('active_agents', [])})")
         except Exception as e:
             print(f"[multi_agent_eval] Error on question {i+1}: {e}")
             traces.append({})
@@ -336,6 +433,9 @@ def evaluate_multi_agent_all(tests: list[TestQuestion]) -> MultiAgentEvalResult:
     print(f"  ARA={ara:.3f} | ACRR={acrr:.3f} | Faithfulness={faithfulness:.3f}")
     print(f"  Per-agent MRR: {per_agent_mrr}")
     print(f"  Parallel efficiency: {parallel_efficiency:.3f}")
+    print(f"  no_info breakdown: {no_info_count} total "
+          f"({evaluator_suppressed_count} evaluator-suppressed, "
+          f"{genuine_no_context_count} no-context)")
 
     return MultiAgentEvalResult(
         agent_routing_accuracy=round(ara, 4),

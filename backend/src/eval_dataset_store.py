@@ -30,11 +30,18 @@ def _row_to_test_question(row: Dict[str, Any]) -> TestQuestion:
 
     category = row.get("category") or "general"
 
+    raw_agents = row.get("expected_agents") or []
+    if isinstance(raw_agents, list):
+        expected_agents = [str(a).strip() for a in raw_agents if str(a).strip()]
+    else:
+        expected_agents = []
+
     return TestQuestion(
         question=row.get("question", ""),
         ground_truth=row.get("ground_truth", ""),
         category=category,
         keywords=keywords,
+        expected_agents=expected_agents,
     )
 
 
@@ -45,6 +52,7 @@ def _test_question_to_row(tq: TestQuestion) -> Dict[str, Any]:
         "ground_truth": tq.ground_truth,
         "category": tq.category,
         "keywords": list(tq.keywords or []),
+        "expected_agents": list(tq.expected_agents or []),
     }
 
 
@@ -56,7 +64,7 @@ def load_eval_rows_from_supabase() -> List[TestQuestion]:
     try:
         resp = (
             supabase_client.table("eval_dataset")
-            .select("id, owner_id, question, ground_truth, category, keywords")
+            .select("id, owner_id, question, ground_truth, category, keywords, expected_agents")
             .eq("owner_id", _owner_id())
             .execute()
         )

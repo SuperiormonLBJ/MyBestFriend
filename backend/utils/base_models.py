@@ -8,6 +8,10 @@ class TestQuestion(BaseModel):
     ground_truth: str = Field(description="The ground truth answer for the question")
     category: str = Field(description="The category of the question")
     keywords: list[str] = Field(description="The keywords of the question")
+    expected_agents: list[str] = Field(
+        default_factory=list,
+        description="For multi-agent eval: which specialist agents should activate for this question. Empty = use category-based fallback.",
+    )
 
 class RetrievalLLMEval(BaseModel):
     """

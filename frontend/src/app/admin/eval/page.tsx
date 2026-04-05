@@ -74,6 +74,7 @@ type EvalRow = {
   ground_truth: string;
   category: string;
   keywords: string[];
+  expected_agents: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -304,6 +305,11 @@ export default function EvalPage() {
           .split(",")
           .map((k) => k.trim())
           .filter(Boolean);
+      } else if (field === "expected_agents") {
+        row.expected_agents = value
+          .split(",")
+          .map((a) => a.trim())
+          .filter(Boolean);
       } else if (field === "category") {
         row.category = value;
       } else if (field === "question") {
@@ -324,6 +330,7 @@ export default function EvalPage() {
         ground_truth: "",
         category: "general",
         keywords: [],
+        expected_agents: [],
       },
       ...prev,
     ]);
@@ -1032,6 +1039,9 @@ export default function EvalPage() {
                       <th className="border-b border-[var(--border)] px-3 py-2 text-left font-semibold">
                         Category
                       </th>
+                      <th className="border-b border-[var(--border)] px-3 py-2 text-left font-semibold">
+                        Expected agents
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1081,12 +1091,22 @@ export default function EvalPage() {
                             placeholder="category"
                           />
                         </td>
+                        <td className="border-b border-[var(--border)] px-3 py-2">
+                          <input
+                            className="w-full rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs"
+                            value={(row.expected_agents || []).join(", ")}
+                            onChange={(e) =>
+                              handleCellChange(idx, "expected_agents", e.target.value)
+                            }
+                            placeholder="career_agent, skills_agent"
+                          />
+                        </td>
                       </tr>
                     ))}
                     {dataset.length === 0 && !datasetLoading && (
                       <tr>
                         <td
-                          colSpan={4}
+                          colSpan={5}
                           className="px-3 py-6 text-center text-xs text-[var(--foreground-muted)]"
                         >
                           No rows yet. Add a row, upload a JSONL file, or run AI
