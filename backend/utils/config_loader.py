@@ -155,6 +155,12 @@ class ConfigLoader:
     def get_recipient_email(self) -> str:
         return self.config.get('RECIPIENT_EMAIL', '')
 
+    def get_smtp_user(self) -> str:
+        return self.config.get('SMTP_USER', '')
+    
+    def get_smtp_password(self) -> str:
+        return self.config.get('SMTP_PASSWORD', '')
+
     def get_hybrid_search_enabled(self) -> bool:
         return bool(self.config.get('HYBRID_SEARCH_ENABLED', True))
 

@@ -194,6 +194,18 @@ export default function EvalPage() {
       .catch(() => {});
   }, []);
 
+  // Load last persisted multi-agent result from Supabase on mount
+  useEffect(() => {
+    fetch("/api/evaluate/multi-agent/latest", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.status === "done" && data?.result) {
+          setMaJob(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Tick every second while running so elapsed time updates live
   useEffect(() => {
     if (job.status !== "running") return;

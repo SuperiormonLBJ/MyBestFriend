@@ -94,6 +94,13 @@ class MultiAgentState(TypedDict):
     checkpoint_thread_id: str
     human_intervention_requested: bool
 
+    # Evaluator agent
+    evaluator_passed: bool        # True if evaluator approved the answer
+    evaluator_score: float        # 0.0–1.0 relevance score from evaluator
+
+    # Notification agent
+    notification_sent: bool       # True if unknown-query notification was dispatched
+
 
 def build_initial_multi_agent_state(query: str, history: list, thread_id: str = "") -> MultiAgentState:
     """Factory for initial MultiAgentState with safe defaults."""
@@ -127,4 +134,7 @@ def build_initial_multi_agent_state(query: str, history: list, thread_id: str = 
         graph_run_id=run_id,
         checkpoint_thread_id=thread_id or run_id,
         human_intervention_requested=False,
+        evaluator_passed=True,
+        evaluator_score=1.0,
+        notification_sent=False,
     )

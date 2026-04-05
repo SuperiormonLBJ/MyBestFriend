@@ -330,8 +330,8 @@ def _send_inquiry_email(requester_name: str, requester_email: str, question: str
 
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+    smtp_user = config.get_smtp_user()
+    smtp_password = config.get_smtp_password()
 
     if not smtp_user or not smtp_password:
         raise ValueError("SMTP_USER and SMTP_PASSWORD environment variables are required.")
@@ -686,6 +686,32 @@ def api_start_evaluation():
 def api_get_latest_evaluation():
     """Return the last completed evaluation result (survives server restarts)."""
     data = _load_eval_result()
+    if not data:
+        return {"status": "none"}
+    return data
+
+
+def _load_multi_agent_eval_result() -> dict | None:
+    """Load the last persisted multi-agent eval result from the eval_results table (id=2)."""
+    try:
+        row = (
+            supabase_client.table("eval_results")
+            .select("status, finished_at, result")
+            .eq("id", 2)
+            .execute()
+        )
+        rows = row.data or []
+        if rows:
+            return rows[0]
+    except Exception as e:
+        print(f"[multi-agent eval] Warning: could not load result from Supabase: {e}")
+    return None
+
+
+@app.get("/api/evaluate/multi-agent/latest")
+def api_get_latest_multi_agent_evaluation():
+    """Return the last completed multi-agent evaluation result (survives server restarts)."""
+    data = _load_multi_agent_eval_result()
     if not data:
         return {"status": "none"}
     return data

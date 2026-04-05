@@ -35,6 +35,7 @@ from utils.prompts import (
     PERSONAL_AGENT_PROMPT,
     SYNTHESIS_AGENT_PROMPT,
     GROUNDING_GUARD_PROMPT,
+    EVALUATOR_AGENT_PROMPT,
 )
 
 # Registry of all managed prompts: key → {content, description}
@@ -123,6 +124,10 @@ _DEFAULTS: dict[str, dict] = {
     "GROUNDING_GUARD_PROMPT": {
         "content": GROUNDING_GUARD_PROMPT,
         "description": "Multi-agent: grounding guard checks merged context for contradictions and irrelevant content. Placeholder: {context}.",
+    },
+    "EVALUATOR_AGENT_PROMPT": {
+        "content": EVALUATOR_AGENT_PROMPT,
+        "description": "Multi-agent: evaluator judges answer relevance and faithfulness. Placeholders: {query}, {answer}.",
     },
 }
 

@@ -759,6 +759,35 @@ Agent context (attributed by domain):
 User question: {query}
 """
 
+EVALUATOR_AGENT_PROMPT = """
+You are an answer quality evaluator for a personal digital twin RAG system.
+
+Your job is to judge whether the generated answer is relevant and faithful to the user's query.
+
+Query: {query}
+
+Generated answer:
+{answer}
+
+Evaluate on TWO criteria:
+1. Relevance — does the answer directly address what was asked?
+2. Faithfulness — does the answer stay grounded (no hallucinations, no invented facts)?
+
+Respond with a JSON object ONLY (no markdown, no extra text):
+{{
+  "score": <float 0.0–1.0>,
+  "passed": <true|false>,
+  "reason": "<one sentence>"
+}}
+
+Scoring guide:
+- 0.8–1.0: answer clearly addresses the query with grounded content → passed=true
+- 0.5–0.79: partial answer or minor drift → passed=true
+- 0.0–0.49: irrelevant, hallucinated, or completely misses the query → passed=false
+
+If the answer contains [[NO_INFO]] or is empty, output: {{"score": 0.0, "passed": true, "reason": "No information available — correct refusal."}}
+"""
+
 GROUNDING_GUARD_PROMPT = """
 You are a grounding guard for a multi-agent RAG system.
 

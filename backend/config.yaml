@@ -4,6 +4,8 @@ TOP_K: 5
 SIMILARITY_THRESHOLD: 0.7
 DATA_DIR: data
 RECIPIENT_EMAIL: superiormon187@gmail.com
+SMTP_USER: superiormon187@gmail.com                                                                                                                                   
+SMTP_PASSWORD: qiuquilsrqflqeps                                                                                                                               
 EMBEDDING_MODEL: text-embedding-3-large
 GENERATOR_MODEL: gpt-4o
 LLM_MODEL: gpt-4o
@@ -15,6 +17,7 @@ LEXICAL_WEIGHT: 0.3
 METADATA_FILTER_ENABLED: true
 SELF_CHECK_ENABLED: false
 MULTI_STEP_ENABLED: true
+MULTI_AGENT_TOKEN_BUDGET: 12000
 MULTI_AGENT_LOG_TRACES: true
 USE_MULTI_AGENT: true
 USE_GRAPH: false

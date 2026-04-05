@@ -26,6 +26,19 @@ from src.agent_state import MultiAgentState
 # Agent domain → expected agent mapping for routing accuracy
 # ---------------------------------------------------------------------------
 
+_STOP_WORDS: frozenset[str] = frozenset({
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "to", "of", "in", "on",
+    "at", "for", "with", "by", "from", "up", "about", "into", "through",
+    "and", "but", "or", "nor", "so", "yet", "not", "as", "if", "this",
+    "that", "these", "those", "i", "me", "my", "we", "our", "you", "your",
+    "he", "his", "she", "her", "it", "its", "they", "their", "what",
+    "which", "who", "when", "where", "how", "all", "each", "more", "most",
+    "other", "some", "no", "only", "same", "than", "too", "very", "also",
+    "then", "there", "than", "so", "just", "both", "been", "while",
+})
+
 CATEGORY_TO_EXPECTED_AGENTS: dict[str, list[str]] = {
     "career": ["career_agent"],
     "work": ["career_agent"],
@@ -49,8 +62,8 @@ def _get_expected_agents(question: TestQuestion) -> list[str]:
     for key, agents in CATEGORY_TO_EXPECTED_AGENTS.items():
         if key in category:
             return agents
-    # Default: all four domain agents for uncategorised questions
-    return ["career_agent", "project_agent", "skills_agent", "personal_agent"]
+    # Default: career + skills cover most general questions without inflating ARA
+    return ["career_agent", "skills_agent"]
 
 
 # ---------------------------------------------------------------------------
@@ -189,11 +202,21 @@ def evaluate_synthesis_faithfulness(
             scores.append(0.0)
             continue
 
-        answer_words = set(answer.lower().split())
-        context_words = set(context.lower().split())
-        # Jaccard-based overlap: fraction of answer words found in context
+        # Filter stop words and short tokens so common words don't inflate scores
+        def _content_words(text: str) -> set[str]:
+            return {
+                w for w in text.lower().split()
+                if len(w) > 2 and w not in _STOP_WORDS
+            }
+
+        answer_words = _content_words(answer)
+        context_words = _content_words(context)
+        if not answer_words:
+            scores.append(0.0)
+            continue
+        # Fraction of meaningful answer words grounded in context
         overlap = len(answer_words & context_words)
-        score = overlap / max(len(answer_words), 1)
+        score = overlap / len(answer_words)
         scores.append(min(1.0, score))
 
     return sum(scores) / len(scores) if scores else 0.0
@@ -201,10 +224,17 @@ def evaluate_synthesis_faithfulness(
 
 def evaluate_parallel_efficiency(traces: list[dict]) -> float:
     """
-    Parallel efficiency: max(agent_latencies) / sum(agent_latencies).
-    For N perfectly parallel agents, this approaches 1/N.
-    Higher = better parallelism (agents running concurrently).
-    Returns average across all traces.
+    Parallel efficiency: measures latency balance across agents.
+
+    Formula: 1 - (std(latencies) / mean(latencies))  [coefficient of variation inverted]
+
+    Score 1.0 = all agents took exactly equal time (perfect balance).
+    Score 0.0 = extreme imbalance (one agent dominates).
+
+    Why not max/sum: that formula gives 1/N for any N equal-time agents regardless
+    of whether they ran in parallel or sequentially — it cannot detect parallelism.
+    This version measures latency variance, which is the actionable signal:
+    high variance means one agent is a bottleneck regardless of execution mode.
     """
     if not traces:
         return 0.0
@@ -212,14 +242,27 @@ def evaluate_parallel_efficiency(traces: list[dict]) -> float:
     efficiencies = []
     for trace in traces:
         agent_trace = trace.get("agent_trace", [])
-        latencies = [t.get("latency_ms", 0) for t in agent_trace if t.get("latency_ms", 0) > 0]
-        if len(latencies) >= 2:
-            max_lat = max(latencies)
-            sum_lat = sum(latencies)
-            if sum_lat > 0:
-                efficiencies.append(max_lat / sum_lat)
+        # Guard: deduplicate trace entries by agent name in case of accumulation
+        seen_agents: set = set()
+        latencies = []
+        for t in agent_trace:
+            agent = t.get("agent", "")
+            lat = t.get("latency_ms", 0)
+            if lat > 0 and agent not in seen_agents:
+                seen_agents.add(agent)
+                latencies.append(lat)
 
-    return sum(efficiencies) / len(efficiencies) if efficiencies else 0.0
+        if len(latencies) < 2:
+            continue
+
+        mean_lat = sum(latencies) / len(latencies)
+        variance = sum((x - mean_lat) ** 2 for x in latencies) / len(latencies)
+        std_lat = variance ** 0.5
+        cv = std_lat / mean_lat if mean_lat > 0 else 0.0
+        # cv=0 → perfect balance (score=1.0); cv=1.0 → high imbalance (score=0.0)
+        efficiencies.append(max(0.0, 1.0 - cv))
+
+    return round(sum(efficiencies) / len(efficiencies), 4) if efficiencies else 0.0
 
 
 # ---------------------------------------------------------------------------

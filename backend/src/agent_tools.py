@@ -45,29 +45,35 @@ def search_knowledge_by_domain(
     top_k: int = 5,
 ) -> list:
     """
-    Run fetch_context with a soft metadata boost scoped to the agent's doc_types.
+    Run fetch_context scoped to the agent's domain doc_types.
     Returns a list of Document objects (same type as fetch_context output).
 
-    We call fetch_context normally (it uses the global hybrid search), then apply
-    a metadata boost that promotes docs matching the agent's domain.
-    This preserves the full hybrid search quality while adding domain focus.
+    Strategy:
+    1. Fetch globally (full hybrid search for quality).
+    2. Hard-filter to docs matching the agent's domain doc_types.
+    3. If fewer than 2 domain-specific docs survive, fall back to soft boost
+       so the agent still returns something useful.
+    4. Rerank and trim to top_k.
     """
-    from src.rag_retrieval import fetch_context, _apply_metadata_boost, rerank_documents
+    from src.rag_retrieval import fetch_context, _apply_metadata_boost
 
     doc_types = DOMAIN_DOC_TYPES.get(agent_name, [])
-
-    # fetch_context uses TOP_K from config — call it then apply domain boost
     docs = fetch_context(query)
 
-    # Apply soft boost toward this agent's domain
     if doc_types:
-        # Use the first doc_type as the primary hint for the boost function
-        intent = {"doc_type": doc_types[0], "year": None}
-        docs = _apply_metadata_boost(docs, intent)
+        # Hard-filter: keep only docs whose doc_type matches this agent's domain
+        domain_docs = [d for d in docs if d.metadata.get("doc_type") in doc_types]
+        if len(domain_docs) >= 2:
+            docs = domain_docs
+        else:
+            # Not enough domain docs — fall back to soft boost re-ordering
+            intent = {"doc_type": doc_types[0], "year": None}
+            docs = _apply_metadata_boost(docs, intent)
 
-    # Rerank and trim to top_k
-    reranked = rerank_documents(query, docs, top_k=top_k)
-    return reranked
+    # Skip LLM reranker per-agent: reranking happens once on the merged set in
+    # grounding_guard, so we just trim to top_k by position (already ranked by
+    # fetch_context's hybrid score + metadata boost).
+    return docs[:top_k]
 
 
 # ---------------------------------------------------------------------------
@@ -140,13 +146,69 @@ def is_loop_detected(state: dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Notification helper
+# ---------------------------------------------------------------------------
+
+def send_unknown_query_notification(query: str, run_id: str = "") -> None:
+    """
+    Send a system email notification when a query could not be answered.
+    Uses SMTP config from environment variables (same as api_server.py contact form).
+    Non-blocking: caller should run this in a background thread.
+    """
+    import os
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    from utils.config_loader import ConfigLoader
+
+    cfg = ConfigLoader()
+    recipient = cfg.get_recipient_email()
+    if not recipient:
+        print("[notification_agent] RECIPIENT_EMAIL not configured — skipping notification")
+        return
+
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = cfg.get_smtp_user()
+    smtp_password = cfg.get_smtp_password()
+
+    if not smtp_user or not smtp_password:
+        print("[notification_agent] SMTP credentials not configured — skipping notification")
+        return
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "[MyBestFriend] Unknown query received"
+    msg["From"] = smtp_user
+    msg["To"] = recipient
+
+    body = (
+        f"Your digital twin could not answer a visitor's question.\n\n"
+        f"Run ID: {run_id}\n\n"
+        f"Question:\n{query}\n\n"
+        f"Consider adding this topic to your knowledge base."
+    )
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.sendmail(smtp_user, recipient, msg.as_string())
+        print(f"[notification_agent] Notification sent to {recipient}")
+    except Exception as e:
+        print(f"[notification_agent] Email send error (non-fatal): {e}")
+
+
+# ---------------------------------------------------------------------------
 # Context formatting for synthesis
 # ---------------------------------------------------------------------------
 
 def format_agent_summary(agent_results: list[AgentResult]) -> str:
     """
-    Build a brief per-agent context summary to include in the synthesis prompt.
-    Helps the synthesis model understand the provenance of each piece of information.
+    Build a brief per-agent attribution header (no content truncation).
+    Used only for provenance metadata — the full merged context from grounding_guard
+    is passed separately to the synthesis prompt via state["context"].
     """
     lines = []
     for result in agent_results:
@@ -155,9 +217,9 @@ def format_agent_summary(agent_results: list[AgentResult]) -> str:
         elif result.get("context"):
             doc_count = len(result.get("docs", []))
             lines.append(
-                f"[{result['agent_name']}] ({doc_count} docs, "
-                f"confidence={result['confidence']:.2f}):\n{result['context'][:500]}..."
+                f"[{result['agent_name']}] {doc_count} docs retrieved, "
+                f"confidence={result.get('confidence', 0.0):.2f}"
             )
         else:
             lines.append(f"[{result['agent_name']}] No relevant information found.")
-    return "\n\n".join(lines)
+    return "\n".join(lines)

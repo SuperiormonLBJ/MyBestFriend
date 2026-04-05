@@ -1,0 +1,17 @@
+import { NextResponse } from "next/server";
+import { BACKEND_URL } from "@/lib/backend";
+
+export async function GET() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/evaluate/multi-agent/latest`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return NextResponse.json({ status: "none" });
+    }
+    return NextResponse.json(await res.json());
+  } catch (err) {
+    console.error("Multi-agent evaluate latest error:", err);
+    return NextResponse.json({ status: "none" });
+  }
+}

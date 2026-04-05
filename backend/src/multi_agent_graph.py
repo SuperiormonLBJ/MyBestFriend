@@ -40,6 +40,7 @@ from src.agent_tools import (
     is_loop_detected,
     format_agent_summary,
     estimate_token_count,
+    send_unknown_query_notification,
 )
 
 config = ConfigLoader()
@@ -241,6 +242,15 @@ def _grounding_guard_node(state: MultiAgentState) -> MultiAgentState:
     # Deduplicate using existing function
     merged_docs = deduplicate_context(all_docs)
 
+    # Rerank once on the merged, deduplicated set — avoids N concurrent LLM calls per agent
+    query = state.get("rewritten_query") or state.get("query", "")
+    if len(merged_docs) > 1 and query:
+        try:
+            from src.rag_retrieval import rerank_documents
+            merged_docs = rerank_documents(query, merged_docs, top_k=len(merged_docs))
+        except Exception as e:
+            print(f"[grounding_guard] rerank warning (non-fatal): {e}")
+
     # Enforce token budget: drop from the tail (lowest confidence / relevance)
     budget = state.get("token_budget_limit", config.get_multi_agent_token_budget())
     kept_docs = []
@@ -262,21 +272,8 @@ def _grounding_guard_node(state: MultiAgentState) -> MultiAgentState:
     state["context"] = merged_context
     state["sources"] = _extract_sources(kept_docs)
 
-    # Optional: run self-check on merged context if SELF_CHECK_ENABLED
-    if config.get_self_check_enabled() and merged_context:
-        try:
-            from src.rag_retrieval import _self_check_answer
-            check_result = _self_check_answer("", merged_context)
-            if check_result.get("severity") == "high":
-                state["grounding_passed"] = False
-                state["grounding_issues"] = check_result.get("issues", [])
-            else:
-                state["grounding_passed"] = True
-        except Exception:
-            state["grounding_passed"] = True
-    else:
-        state["grounding_passed"] = True
-
+    # Self-check is deferred to synthesis (needs the generated answer, not empty string)
+    state["grounding_passed"] = True
     return state
 
 
@@ -294,7 +291,9 @@ def _synthesis_node(state: MultiAgentState) -> MultiAgentState:
         state["answer"] = ""
         return state
 
-    agent_context = format_agent_summary(state.get("agent_results", []))
+    # Build context: full merged context from grounding_guard + attribution header
+    attribution = format_agent_summary(state.get("agent_results", []))
+    agent_context = f"Agent retrieval summary:\n{attribution}\n\nMerged context:\n{state.get('context', '')}"
     synthesis_prompt = get_prompt("SYNTHESIS_AGENT_PROMPT").format(
         agent_context=agent_context,
         query=state["query"],
@@ -315,6 +314,17 @@ def _synthesis_node(state: MultiAgentState) -> MultiAgentState:
         print(f"[synthesis] Error: {e}")
         state["no_info"] = True
         state["answer"] = ""
+
+    # Self-check now that we have an actual answer
+    if config.get_self_check_enabled() and state.get("answer") and state.get("context"):
+        try:
+            from src.rag_retrieval import _self_check_answer
+            check_result = _self_check_answer(state["answer"], state["context"])
+            if check_result.get("severity") == "high":
+                state["grounding_passed"] = False
+                state["grounding_issues"] = check_result.get("issues", [])
+        except Exception:
+            pass
 
     return state
 
@@ -338,7 +348,9 @@ def _synthesis_tl_node(state: MultiAgentState) -> MultiAgentState:
         return state
 
     print(f"[synthesis] generating answer with model={config.get_generator_model()}")
-    agent_context = format_agent_summary(state.get("agent_results", []))
+    # Build context: full merged context from grounding_guard + attribution header
+    attribution = format_agent_summary(state.get("agent_results", []))
+    agent_context = f"Agent retrieval summary:\n{attribution}\n\nMerged context:\n{state.get('context', '')}"
     synthesis_prompt = get_prompt("SYNTHESIS_AGENT_PROMPT").format(
         agent_context=agent_context,
         query=state["query"],
@@ -406,6 +418,95 @@ def _trace_log_node(state: MultiAgentState) -> MultiAgentState:
 
 
 # ---------------------------------------------------------------------------
+# Node: Evaluator Agent
+# ---------------------------------------------------------------------------
+
+def _evaluator_agent_node(state: MultiAgentState) -> MultiAgentState:
+    """
+    Post-synthesis quality gate. Uses EVALUATOR_MODEL (gpt-4o by default) to score
+    answer relevance and faithfulness against the original query.
+
+    If score < 0.5 (irrelevant or hallucinated):
+      - Sets no_info=True and clears the answer.
+      - The downstream notification_agent will fire because no_info=True.
+
+    If the answer is already empty / no_info=True (e.g. grounding_guard found nothing),
+    the evaluator skips LLM call and marks evaluator_passed=True (correct refusal).
+    """
+    import json as _json
+
+    answer = state.get("answer", "").strip()
+    query = state.get("query", "")
+
+    # Nothing to evaluate — correct refusal path
+    if state.get("no_info") or not answer:
+        state["evaluator_passed"] = True
+        state["evaluator_score"] = 0.0
+        return state
+
+    evaluator_prompt = get_prompt("EVALUATOR_AGENT_PROMPT").format(
+        query=query,
+        answer=answer,
+    )
+
+    llm = ChatOpenAI(model=config.get_evaluator_model(), temperature=0)
+    try:
+        response = llm.invoke([HumanMessage(content=evaluator_prompt)])
+        raw = (response.content or "").strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        parsed = _json.loads(raw)
+        score = float(parsed.get("score", 1.0))
+        passed = bool(parsed.get("passed", True))
+        reason = parsed.get("reason", "")
+        print(f"[evaluator_agent] score={score:.2f} passed={passed} reason={reason!r}")
+    except Exception as e:
+        print(f"[evaluator_agent] Parse/invoke error (non-fatal, defaulting to pass): {e}")
+        score = 1.0
+        passed = True
+
+    state["evaluator_score"] = score
+    state["evaluator_passed"] = passed
+
+    if not passed:
+        print(f"[evaluator_agent] Answer rejected — reverting to no_info")
+        state["no_info"] = True
+        state["answer"] = ""
+
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Node: Notification Agent
+# ---------------------------------------------------------------------------
+
+def _notification_agent_node(state: MultiAgentState) -> MultiAgentState:
+    """
+    Fire-and-forget notification node. Sends an email to the owner whenever a query
+    could not be answered (no_info=True) — either because the knowledge base lacks
+    the information or because the evaluator rejected the generated answer.
+
+    Always runs last (after trace_log) so it has the final state.
+    Non-blocking: email send happens in a background thread.
+    """
+    if not state.get("no_info"):
+        return state
+
+    query = state.get("query", "")
+    run_id = state.get("graph_run_id", "")
+
+    def _send():
+        send_unknown_query_notification(query=query, run_id=run_id)
+
+    threading.Thread(target=_send, daemon=True).start()
+    state["notification_sent"] = True
+    return state
+
+
+# ---------------------------------------------------------------------------
 # HITL: Human-in-the-loop interrupt node
 # ---------------------------------------------------------------------------
 
@@ -463,8 +564,10 @@ def build_multi_agent_graph(use_checkpointing: bool = False):
     graph.add_node("job_prep_agent", job_prep_agent)
     graph.add_node("grounding_guard", _grounding_guard_node)
     graph.add_node("synthesis", _synthesis_node)
+    graph.add_node("evaluator_agent", _evaluator_agent_node)
     graph.add_node("hitl_review", _await_human_review_node)
     graph.add_node("trace_log", _trace_log_node)
+    graph.add_node("notification_agent", _notification_agent_node)
 
     # Entry point
     graph.set_entry_point("intent_classifier")
@@ -490,9 +593,11 @@ def build_multi_agent_graph(use_checkpointing: bool = False):
 
     # Linear tail
     graph.add_edge("grounding_guard", "synthesis")
-    graph.add_edge("synthesis", "hitl_review")
+    graph.add_edge("synthesis", "evaluator_agent")
+    graph.add_edge("evaluator_agent", "hitl_review")
     graph.add_edge("hitl_review", "trace_log")
-    graph.add_edge("trace_log", END)
+    graph.add_edge("trace_log", "notification_agent")
+    graph.add_edge("notification_agent", END)
 
     checkpointer = None
     if use_checkpointing:
@@ -528,8 +633,10 @@ def _build_streaming_graph() -> object:
     graph.add_node("job_prep_agent", job_prep_agent)
     graph.add_node("grounding_guard", _grounding_guard_node)
     graph.add_node("synthesis", _synthesis_tl_node)  # reads queue from _tl.token_queue
+    graph.add_node("evaluator_agent", _evaluator_agent_node)
     graph.add_node("hitl_review", _await_human_review_node)
     graph.add_node("trace_log", _trace_log_node)
+    graph.add_node("notification_agent", _notification_agent_node)
 
     graph.set_entry_point("intent_classifier")
     graph.add_edge("intent_classifier", "supervisor")
@@ -541,9 +648,11 @@ def _build_streaming_graph() -> object:
     for agent_name in SPECIALIST_AGENT_NAMES:
         graph.add_edge(agent_name, "grounding_guard")
     graph.add_edge("grounding_guard", "synthesis")
-    graph.add_edge("synthesis", "hitl_review")
+    graph.add_edge("synthesis", "evaluator_agent")
+    graph.add_edge("evaluator_agent", "hitl_review")
     graph.add_edge("hitl_review", "trace_log")
-    graph.add_edge("trace_log", END)
+    graph.add_edge("trace_log", "notification_agent")
+    graph.add_edge("notification_agent", END)
     return graph.compile()
 
 
@@ -658,8 +767,10 @@ def get_graph_topology() -> dict:
             {"id": "job_prep_agent", "type": "specialist", "domain": "job_prep", "description": "Job preparation context retrieval"},
             {"id": "grounding_guard", "type": "guard", "description": "Dedup, token budget, self-check, fan-in"},
             {"id": "synthesis", "type": "generator", "description": "Multi-source synthesis with source attribution"},
+            {"id": "evaluator_agent", "type": "evaluator", "description": "Answer quality gate — reverts to no_info if answer is irrelevant or hallucinated"},
             {"id": "hitl_review", "type": "interrupt", "description": "Human-in-the-loop review (when HITL_ENABLED=true)"},
             {"id": "trace_log", "type": "logger", "description": "Async trace write to agent_run_traces"},
+            {"id": "notification_agent", "type": "notifier", "description": "Fire-and-forget email notification to owner when query is unanswerable"},
         ],
         "edges": [
             {"from": "intent_classifier", "to": "supervisor", "type": "always"},
@@ -675,9 +786,11 @@ def get_graph_topology() -> dict:
             {"from": "personal_agent", "to": "grounding_guard", "type": "fan_in"},
             {"from": "job_prep_agent", "to": "grounding_guard", "type": "fan_in"},
             {"from": "grounding_guard", "to": "synthesis", "type": "always"},
-            {"from": "synthesis", "to": "hitl_review", "type": "always"},
+            {"from": "synthesis", "to": "evaluator_agent", "type": "always"},
+            {"from": "evaluator_agent", "to": "hitl_review", "type": "always"},
             {"from": "hitl_review", "to": "trace_log", "type": "always"},
-            {"from": "trace_log", "to": "END", "type": "always"},
+            {"from": "trace_log", "to": "notification_agent", "type": "always"},
+            {"from": "notification_agent", "to": "END", "type": "always"},
         ],
         "config": {
             "parallel_enabled": config.get_multi_agent_parallel(),
