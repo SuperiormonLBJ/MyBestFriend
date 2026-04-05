@@ -459,11 +459,17 @@ export default function EvalPage() {
             .map((k: string) => k.trim())
             .filter(Boolean);
         }
+        const expectedAgents: string[] = Array.isArray(obj.expected_agents)
+          ? obj.expected_agents.map((a: any) => String(a).trim()).filter(Boolean)
+          : typeof obj.expected_agents === "string"
+          ? obj.expected_agents.split(",").map((a: string) => a.trim()).filter(Boolean)
+          : [];
         parsed.push({
           question,
           ground_truth: groundTruth,
           category,
           keywords,
+          expected_agents: expectedAgents,
         });
       }
       setDataset(parsed);
