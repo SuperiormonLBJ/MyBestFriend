@@ -507,6 +507,9 @@ Your task:
 - De‑emphasize or shorten irrelevant parts.
 - Output a COMPLETE resume in **Markdown**, with clear sections such as uploaded resume.
 
+Note on terms:
+UOB - United Overseas Bank
+
 Inputs:
 - Job description:
 {job_description}
@@ -628,15 +631,15 @@ Instructions:
 - Use `category` values like: "career", "project", "education", "research", "personality",
   "frontend", "ai_engineering", "platform_engineering", etc.
 - Include 3–6 short `keywords` per item that reflect technologies, domains, and key entities.
-- For `expected_agents`, list the specialist agents that should retrieve context for this question.
-  Available agents: "career_agent", "project_agent", "skills_agent", "personal_agent".
-  Rules:
-    - Work history, roles, responsibilities, companies → ["career_agent"]
-    - Software projects, side projects, portfolio → ["project_agent"]
-    - Technical skills, languages, tools, education → ["skills_agent"]
-    - Personal background, hobbies, values, lifestyle → ["personal_agent"]
-    - Questions spanning multiple domains → include all relevant agents
-    - Multi-hop questions (e.g. career + project) → ["career_agent", "project_agent"]
+- For `expected_agents`, list the specialist agents that should retrieve context for this question.                                              
+      Available agents: "career_agent", "project_agent", "skills_agent", "personal_agent".                                                           
+      Rules:                                                                                                                                         
+      - Work history, roles, responsibilities, companies → ["career_agent"]                                                                        
+      - Software projects, side projects, portfolio → ["project_agent"]                                                                            
+      - Technical skills, languages, tools, education → ["skills_agent"]                                                                           
+      - Personal background, hobbies, values, lifestyle → ["personal_agent"]                                                                       
+      - Questions spanning multiple domains → include all relevant agents                                                                          
+      - Multi-hop questions (e.g. career + project) → ["career_agent", "project_agent"]     
 - Do NOT include any comments, explanations, or trailing text outside the JSON array.
 """
 
@@ -653,31 +656,17 @@ Analyse the user's question and determine:
 3. Any useful entities to extract (year, doc_type hint, job context)
 
 Available agents:
-- career_agent: work history, jobs, companies, responsibilities, achievements, team scale, business impact at a company
-- project_agent: software projects, side projects, open source, portfolio, specific tools/frameworks used IN a project, project metrics, hackathons, research papers
-- skills_agent: technical skills, programming languages, tools, education, certifications, GPA, degrees
-- personal_agent: personal background, hobbies, sports, values, life experiences, personality traits
+- career_agent: work history, jobs, companies, responsibilities, achievements
+- project_agent: software projects, side projects, open source, portfolio
+- skills_agent: technical skills, programming languages, tools, education, certifications
+- personal_agent: personal background, hobbies, values, life experiences
 - job_prep_agent: ONLY activate when the question involves a job description or application
 
-Routing rules — follow these strictly:
-- Questions about a SPECIFIC PROJECT (name, tools used, outcomes, architecture) → always include project_agent
-- Questions about a specific TECHNOLOGY or FRAMEWORK → include skills_agent; if used in a project context, also include project_agent
-- Questions about WORK IMPACT, headcount, or metrics at a company → career_agent
-- Questions spanning BOTH work history AND a named project → career_agent + project_agent
-- Questions about EDUCATION, GPA, degree, certifications → skills_agent
-- Questions about HOBBIES, sports, personality, lifestyle → personal_agent
-- Broad "tell me about yourself" or multi-domain questions → activate all relevant agents (up to 4)
-- When uncertain whether a question is about career or project, include BOTH rather than guessing
-- job_prep_agent is only activated when a job description or application is explicitly present
-- Confidence should be 0.9+ for clear queries, lower for ambiguous ones
-
-Examples:
-- "What backend did Beiji use in the Code Reviewer?" → project_agent (specific project detail)
-- "What AI frameworks does Beiji know?" → skills_agent + project_agent (skills + project evidence)
-- "How many teams did Beiji's n8n platform serve?" → career_agent + project_agent (impact + project)
-- "What is Beiji's GPA?" → skills_agent
-- "What sports does Beiji play?" → personal_agent
-- "What was Beiji's role at UOB?" → career_agent
+Rules:
+- Activate only the agents needed. A narrow question about one role activates only career_agent.
+- A broad "tell me about yourself" question activates all four domain agents.
+- job_prep_agent is only activated when job preparation context is explicitly present.
+- Confidence should be 0.9+ for clear queries, lower for ambiguous ones.
 
 Respond with a JSON object matching:
 {{
@@ -762,23 +751,39 @@ This context will be synthesised with information from other specialist agents.
 Focus on authentic personality traits, interests, and personal motivations.
 """
 
+DOMAIN_SUMMARY_PROMPT = """
+You are a {domain} specialist agent for a personal digital twin RAG system.
+
+Based on the retrieved documents and the user's question, write a concise 2-3 sentence summary.
+Capture only the most relevant facts that directly help answer the question.
+If the documents contain nothing useful for this question, write exactly: No relevant {domain} information found.
+
+User question: {query}
+
+Retrieved {domain} documents:
+{context}
+
+Domain summary:"""
+
 SYNTHESIS_AGENT_PROMPT = """
 You are the synthesis agent for a personal digital twin multi-agent RAG system.
 
-You have received context retrieved by specialist agents (career, project, skills, personal).
-Your job is to synthesise this information into a single, coherent, grounded answer.
+You have received domain summaries from specialist agents and the full merged context.
+Your job is to synthesise these into a single coherent, grounded answer.
 
 CRITICAL RULES:
-1. Answer using ONLY the information provided in the context below. Do not use prior knowledge.
-2. When you state a fact, you MUST attribute it to its source domain in brackets:
+1. Answer using ONLY the information provided below. Do not use prior knowledge.
+2. Attribute facts to their source domain in brackets:
    e.g. "[Career] Worked at Acme Corp 2021–2023" or "[Project] Built X using React and Python"
 3. NEVER infer relationships between facts from different domains unless explicitly stated.
-   Do NOT write "used skill X in project Y" unless a document explicitly says so.
-4. If the context does not contain enough information to answer, output [[NO_INFO]] at the end.
+4. If the information is insufficient to answer, output [[NO_INFO]] at the end.
 5. Be concise and direct. Avoid filler phrases.
 
-Agent context (attributed by domain):
-{agent_context}
+Domain summaries from specialist agents:
+{agent_summaries}
+
+Full merged context (for detailed facts):
+{merged_context}
 
 User question: {query}
 """
@@ -825,4 +830,19 @@ Merged context:
 
 List any specific issues found. If the context is clean, respond with "PASS".
 Focus on factual contradictions and irrelevant content — do not rewrite the context.
+"""
+
+
+GUARDRAIL_PROMPT = """
+You are a relevance classifier for a personal chatbot about a person named {owner_name}. 
+
+Decide whether the user's question is related to {owner_name} — background, skills, projects, career, experience, education, personality, or anything about him/her. 
+
+Allow for following cases only:
+- questions about {owner_name}'s background, skills, projects, career, experience, education, personality, or anything about him/her. 
+- assume "he/his" or "she/her" refer to {owner_name}, allow to pass
+- greetings and small-talk that could naturally occur in such a context. 
+
+
+Reply with exactly one word: YES if the question is about {owner_name}, NO otherwise.
 """

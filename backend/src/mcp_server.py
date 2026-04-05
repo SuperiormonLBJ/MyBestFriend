@@ -157,6 +157,77 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["job_description"],
             },
         ),
+        types.Tool(
+            name="fetch_job_description",
+            description=(
+                "Scrape and extract the job description text from a job posting URL. "
+                "Supports LinkedIn, Greenhouse, Lever, Workday, and most public job boards. "
+                "Returns empty text if the page requires login."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Full URL of the job posting (https://...)",
+                    },
+                },
+                "required": ["url"],
+            },
+        ),
+        types.Tool(
+            name="score_job_fit",
+            description=(
+                "Score how well the twin's owner fits a given job description. "
+                "Extracts requirements from the JD, retrieves matching experience from the "
+                "knowledge base, and returns a 0-100 fit score with matched/missing requirement lists."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_description": {
+                        "type": "string",
+                        "description": "The full job description text",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of KB docs to retrieve for matching (default 5)",
+                        "default": 5,
+                    },
+                },
+                "required": ["job_description"],
+            },
+        ),
+        types.Tool(
+            name="search_recent_jobs",
+            description=(
+                "Search for recent job postings from public job boards (Arbeitnow, RemoteOK). "
+                "No API key required. Filter by keywords and time window. "
+                "Use to find similar roles for the twin's owner."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Search keywords, e.g. ['machine learning', 'python', 'NLP']",
+                    },
+                    "hours": {
+                        "type": "integer",
+                        "description": "Only return jobs posted within this many hours (default 24)",
+                        "default": 24,
+                    },
+                    "sources": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Job board sources to include: 'arbeitnow', 'remoteok'. Defaults to both.",
+                        "default": ["linkedin","indeed"],
+                    },
+                },
+                "required": ["keywords"],
+            },
+        ),
     ]
 
 
@@ -180,6 +251,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         result = await loop.run_in_executor(None, _generate_structured_bio, arguments)
     elif name == "extract_job_fit_signals":
         result = await loop.run_in_executor(None, _extract_job_fit_signals, arguments)
+    elif name == "fetch_job_description":
+        result = await loop.run_in_executor(None, _fetch_job_description, arguments)
+    elif name == "score_job_fit":
+        result = await loop.run_in_executor(None, _score_job_fit, arguments)
+    elif name == "search_recent_jobs":
+        result = await loop.run_in_executor(None, _search_recent_jobs, arguments)
     else:
         result = {"error": f"Unknown tool: {name}"}
 
@@ -269,6 +346,31 @@ def _extract_job_fit_signals(args: dict) -> dict:
         "keywords": reqs.get("keywords", []),
         "relevant_experience_context": context[:3000] if context else "",
     }
+
+
+def _fetch_job_description(args: dict) -> dict:
+    from src.agent_tools import scrape_job_description
+    url = args["url"]
+    text = scrape_job_description(url)
+    return {"url": url, "text": text, "char_count": len(text), "success": len(text) > 100}
+
+
+def _score_job_fit(args: dict) -> dict:
+    from src.agent_tools import score_job_fit
+    return score_job_fit(
+        job_description=args["job_description"],
+        top_k=int(args.get("top_k", 5)),
+    )
+
+
+def _search_recent_jobs(args: dict) -> dict:
+    from src.agent_tools import search_recent_jobs
+    jobs = search_recent_jobs(
+        keywords=args["keywords"],
+        hours=int(args.get("hours", 24)),
+        sources=args.get("sources") or None,
+    )
+    return {"jobs": jobs, "count": len(jobs)}
 
 
 # ---------------------------------------------------------------------------

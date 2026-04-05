@@ -73,6 +73,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+owner_name = config.get_frontend_config().get("owner_name")
 
 class VerifyKeyRequest(BaseModel):
     key: str
@@ -93,6 +94,7 @@ class ChatRequest(BaseModel):
     history: list[dict[str, str]] = []
     thread_id: str | None = None   # for LangGraph checkpointing / HITL
     mode: str | None = None        # override flags: "multi_agent", "graph", "direct"
+    job_mode: bool = False         # when True: force multi_agent + activate job_prep_agent
 
 
 class ChatResponse(BaseModel):
@@ -156,7 +158,10 @@ def _prepare_job_context(job_description: str, word_limit_override: int | None =
 
 
 def _resolve_mode(request: ChatRequest) -> str:
-    """Determine execution mode: multi_agent > graph > direct (in priority order)."""
+    """Determine execution mode: multi_agent > graph > direct (in priority order).
+    job_mode forces multi_agent so the job_prep_agent is available."""
+    if request.job_mode:
+        return "multi_agent"
     if request.mode:
         return request.mode
     if config.get_use_multi_agent():
@@ -166,13 +171,33 @@ def _resolve_mode(request: ChatRequest) -> str:
     return "direct"
 
 
+
+def _guardrail_checker(message: str) -> bool:
+    """Return True if the message is relevant to the owner; False otherwise."""
+    try:
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=5)
+        result = llm.invoke([
+            SystemMessage(content=get_prompt("GUARDRAIL_PROMPT").format(owner_name=owner_name)),
+            HumanMessage(content=message, role="user"),
+        ])
+        return result.content.strip().upper().startswith("YES")
+    except Exception:
+        # Fail open: if the classifier errors, let the request through.
+        return True
+
+_GUARDRAIL_REPLY = f"This is a chatbot designed for queries related to {owner_name} only."
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
+    if not request.job_mode and not _guardrail_checker(request.message):
+        return ChatResponse(answer=_GUARDRAIL_REPLY, no_info=False, sources=[])
     mode = _resolve_mode(request)
     if mode == "multi_agent":
         from src.multi_agent_graph import run_multi_agent_graph
         answer, _, no_info, sources = run_multi_agent_graph(
-            request.message, request.history, thread_id=request.thread_id
+            request.message, request.history,
+            thread_id=request.thread_id, job_mode=request.job_mode,
         )
     elif mode == "graph":
         from src.conversation_graph import run_graph
@@ -184,13 +209,24 @@ def chat(request: ChatRequest):
 
 @app.post("/api/chat/stream")
 def chat_stream(request: ChatRequest):
+    if not request.job_mode and not _guardrail_checker(request.message):
+        def _guardrail_stream():
+            yield f"data: {json.dumps({'token': _GUARDRAIL_REPLY})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'final': _GUARDRAIL_REPLY, 'sources': []})}\n\n"
+        return StreamingResponse(
+            _guardrail_stream(),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+        )
+
     mode = _resolve_mode(request)
 
     def event_stream():
         if mode == "multi_agent":
             from src.multi_agent_graph import run_multi_agent_graph_stream
             gen = run_multi_agent_graph_stream(
-                request.message, request.history, thread_id=request.thread_id
+                request.message, request.history,
+                thread_id=request.thread_id, job_mode=request.job_mode,
             )
         else:
             gen = generate_answer_stream(request.message, request.history)
@@ -308,6 +344,50 @@ def api_job_prepare(request: JobPrepRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------------------------------------------------------------------
+# Job tools — fetch / score / search  (called from frontend Job Mode panel)
+# ---------------------------------------------------------------------------
+
+class JobFetchRequest(BaseModel):
+    url: str
+
+class JobScoreRequest(BaseModel):
+    job_description: str
+    top_k: int = 5
+
+class JobSearchRequest(BaseModel):
+    keywords: list[str]
+    hours: int = 24
+    sources: list[str] = []
+
+
+@app.post("/api/job/fetch")
+def job_fetch(request: JobFetchRequest):
+    """Scrape a job URL and return the extracted text."""
+    from src.agent_tools import scrape_job_description
+    text = scrape_job_description(request.url)
+    return {"url": request.url, "text": text, "char_count": len(text), "success": len(text) > 100}
+
+
+@app.post("/api/job/score")
+def job_score(request: JobScoreRequest):
+    """Score fit between the owner's KB and a job description."""
+    from src.agent_tools import score_job_fit
+    return score_job_fit(request.job_description, top_k=request.top_k)
+
+
+@app.post("/api/job/search")
+def job_search(request: JobSearchRequest):
+    """Search recent public job postings by keywords."""
+    from src.agent_tools import search_recent_jobs
+    jobs = search_recent_jobs(
+        keywords=request.keywords,
+        hours=request.hours,
+        sources=request.sources or None,
+    )
+    return {"jobs": jobs, "count": len(jobs)}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -407,6 +487,11 @@ class ConfigUpdateRequest(BaseModel):
     multi_step_enabled: bool | None = None
     use_graph: bool | None = None
     admin_api_key: str | None = None
+    # Multi-agent flags
+    use_multi_agent: bool | None = None
+    multi_agent_token_budget: int | None = None
+    multi_agent_parallel: bool | None = None
+    multi_agent_log_traces: bool | None = None
 
 
 @app.post("/api/config/push", dependencies=[AdminAuth])

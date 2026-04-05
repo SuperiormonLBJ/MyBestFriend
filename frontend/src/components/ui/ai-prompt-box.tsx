@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Square, Briefcase } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -251,9 +251,18 @@ interface PromptInputBoxProps {
   isLoading?: boolean;
   placeholder?: string;
   className?: string;
+  jobMode?: boolean;
+  onJobModeChange?: (enabled: boolean) => void;
 }
 export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxProps>((props, ref) => {
-  const { onSend = () => {}, isLoading = false, placeholder = "Type your message here...", className } = props;
+  const {
+    onSend = () => {},
+    isLoading = false,
+    placeholder = "Type your message here...",
+    className,
+    jobMode = false,
+    onJobModeChange,
+  } = props;
   const [input, setInput] = React.useState("");
   const promptBoxRef = React.useRef<HTMLDivElement>(null);
 
@@ -283,14 +292,43 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
       onSubmit={handleSubmit}
       className={cn(
         "w-full bg-[#1F2023] border-[#444444] shadow-[0_2px_0_0_rgba(0,0,0,0.2)] transition-all duration-300 ease-in-out",
+        jobMode && "border-[#00E6D8]/60",
         className
       )}
       disabled={isLoading}
       ref={ref || promptBoxRef}
     >
-      <div className="flex items-end gap-2">
-        <PromptInputTextarea placeholder={placeholder} className="text-base flex-1 min-w-0" />
-        <PromptInputAction tooltip={isLoading ? "Stop generation" : "Send message"}>
+      <PromptInputTextarea placeholder={jobMode ? "Paste a job URL or description…" : placeholder} className="text-base flex-1 min-w-0" />
+      <div className="flex items-center justify-between px-1 pb-1 pt-0.5">
+        {/* Job Mode toggle — bottom-left, like ChatGPT web search */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onJobModeChange?.(!jobMode)}
+              disabled={isLoading}
+              aria-pressed={jobMode}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200 select-none",
+                jobMode
+                  ? "bg-[#00E6D8]/15 text-[#00E6D8] border border-[#00E6D8]/40 hover:bg-[#00E6D8]/25"
+                  : "bg-transparent text-[#6B7280] border border-transparent hover:bg-[#3A3A40] hover:text-[#D1D5DB]",
+                "disabled:opacity-40 disabled:cursor-not-allowed"
+              )}
+            >
+              <Briefcase className="h-3.5 w-3.5 shrink-0" />
+              Job Mode
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {jobMode
+              ? "Job Mode on — paste a URL or JD to analyse fit"
+              : "Turn on Job Mode to analyse a job description"}
+          </TooltipContent>
+        </Tooltip>
+
+        {/* Send button — bottom-right */}
+        <PromptInputAction tooltip={isLoading ? "Generating…" : "Send message"}>
           <Button
             variant="default"
             size="icon"

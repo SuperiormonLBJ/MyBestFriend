@@ -19,6 +19,7 @@ class AgentResult(TypedDict):
     agent_name: str          # e.g. "career_agent", "project_agent"
     docs: list               # retrieved Document objects
     context: str             # concatenated chunk text
+    summary: str             # 2-3 sentence LLM-generated domain summary (Option B)
     sources: list            # _extract_sources() output
     token_count: int         # estimated token count of context
     error: str | None        # failure reason if agent raised an exception
@@ -73,6 +74,13 @@ class MultiAgentState(TypedDict):
     intent: dict                # IntentResult serialised to dict
     active_agents: list[str]    # agent names the supervisor dispatched
 
+    # Job mode — set by the frontend toggle, gates job_prep_agent activation
+    job_mode: bool              # True = user explicitly selected Job Mode
+
+    # Job URL scraping (populated by fast_router when a job URL is detected)
+    job_url: str                # original URL from the user's query
+    scraped_job_text: str       # full JD text scraped from the URL
+
     # Fan-in reducers: parallel agents append; LangGraph concatenates at merge
     agent_results: Annotated[list[AgentResult], operator.add]
     agent_trace: Annotated[list[dict], operator.add]    # {agent, latency_ms, doc_count}
@@ -94,15 +102,16 @@ class MultiAgentState(TypedDict):
     checkpoint_thread_id: str
     human_intervention_requested: bool
 
-    # Evaluator agent
-    evaluator_passed: bool        # True if evaluator approved the answer
-    evaluator_score: float        # 0.0–1.0 relevance score from evaluator
-
     # Notification agent
     notification_sent: bool       # True if unknown-query notification was dispatched
 
 
-def build_initial_multi_agent_state(query: str, history: list, thread_id: str = "") -> MultiAgentState:
+def build_initial_multi_agent_state(
+    query: str,
+    history: list,
+    thread_id: str = "",
+    job_mode: bool = False,
+) -> MultiAgentState:
     """Factory for initial MultiAgentState with safe defaults."""
     import uuid
     run_id = str(uuid.uuid4())
@@ -123,6 +132,9 @@ def build_initial_multi_agent_state(query: str, history: list, thread_id: str = 
         # Multi-agent fields
         intent={},
         active_agents=[],
+        job_mode=job_mode,
+        job_url="",
+        scraped_job_text="",
         agent_results=[],
         agent_trace=[],
         agent_errors=[],
@@ -134,7 +146,5 @@ def build_initial_multi_agent_state(query: str, history: list, thread_id: str = 
         graph_run_id=run_id,
         checkpoint_thread_id=thread_id or run_id,
         human_intervention_requested=False,
-        evaluator_passed=True,
-        evaluator_score=1.0,
         notification_sent=False,
     )

@@ -33,9 +33,11 @@ from utils.prompts import (
     PROJECT_AGENT_PROMPT,
     SKILLS_AGENT_PROMPT,
     PERSONAL_AGENT_PROMPT,
+    DOMAIN_SUMMARY_PROMPT,
     SYNTHESIS_AGENT_PROMPT,
     GROUNDING_GUARD_PROMPT,
     EVALUATOR_AGENT_PROMPT,
+    GUARDRAIL_PROMPT,
 )
 
 # Registry of all managed prompts: key → {content, description}
@@ -117,9 +119,13 @@ _DEFAULTS: dict[str, dict] = {
         "content": PERSONAL_AGENT_PROMPT,
         "description": "Multi-agent: personal background specialist agent prompt. Placeholder: {context}.",
     },
+    "DOMAIN_SUMMARY_PROMPT": {
+        "content": DOMAIN_SUMMARY_PROMPT,
+        "description": "Multi-agent: per-agent mini-summary of retrieved docs. Placeholders: {domain}, {query}, {context}.",
+    },
     "SYNTHESIS_AGENT_PROMPT": {
         "content": SYNTHESIS_AGENT_PROMPT,
-        "description": "Multi-agent: synthesis agent merges specialist context into final answer. Placeholders: {agent_context}, {query}.",
+        "description": "Multi-agent: synthesis agent merges specialist summaries into final answer. Placeholders: {agent_summaries}, {merged_context}, {query}.",
     },
     "GROUNDING_GUARD_PROMPT": {
         "content": GROUNDING_GUARD_PROMPT,
@@ -128,6 +134,10 @@ _DEFAULTS: dict[str, dict] = {
     "EVALUATOR_AGENT_PROMPT": {
         "content": EVALUATOR_AGENT_PROMPT,
         "description": "Multi-agent: evaluator judges answer relevance and faithfulness. Placeholders: {query}, {answer}.",
+    },
+    "GUARDRAIL_PROMPT": {
+        "content": GUARDRAIL_PROMPT,
+        "description": "Multi-agent: relevance classifier for Beiji. Placeholder: {query}, {context}.",
     },
 }
 

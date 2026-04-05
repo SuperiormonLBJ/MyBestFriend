@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { SquarePen } from "lucide-react";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { ChatMessageBubble, type ChatMessage, type SourceItem } from "@/components/chat-message";
+import { JobToolCard, type JobToolCardData } from "@/components/ui/job-tool-card";
 import { Typewriter } from "@/components/ui/typewriter";
 import { EtherealShadow } from "@/components/ui/ethereal-shadow";
 import { CHAT_BG, ETHEREAL_DEFAULT_COLOR, ETHEREAL_ANIMATION, ETHEREAL_NOISE } from "@/lib/constants";
@@ -20,12 +21,10 @@ type KnowledgeScope = {
 };
 
 const QUICK_PROMPTS = [
-  "What is {name}'s current role?",
-  "Tell me about {name}'s projects",
-  "What skills does {name} have?",
+  "What is {name}'s current role in UOB?",
+  "Tell me about {name}'s project in UOB",
+  "What AI skills does {name} have?",
   "What are {name}'s hobbies?",
-  "Summarize {name}'s career",
-  "What did {name} study?",
 ];
 
 export default function ChatPage() {
@@ -37,6 +36,10 @@ export default function ChatPage() {
   const [scope, setScope] = useState<KnowledgeScope | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [jobMode, setJobMode] = useState(false);
+  const [jobTools, setJobTools] = useState<JobToolCardData[]>([]);
+  // Keywords saved after scoring a JD — reused when user asks to "find similar jobs"
+  const lastJobKeywordsRef = useRef<string[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState("");
   const [contactState, setContactState] = useState<ContactState>("idle");
   const [contactName, setContactName] = useState("");
@@ -70,6 +73,156 @@ export default function ChatPage() {
       .catch(() => {});
   }, []);
 
+  // ── Job tool orchestration ──────────────────────────────────────────────────
+
+  /** Extract meaningful job keywords from a natural-language search query. */
+  const extractKeywordsFromQuery = (query: string): string[] => {
+    // Strip time expressions before tokenising so "24hour", "48h" don't leak in
+    const cleaned = query
+      .replace(/\b\d+\s*hours?\b/gi, "")
+      .replace(/\b\d+h\b/gi, "")
+      .replace(/\bpast\s+\w+\b/gi, "")
+      .replace(/\blast\s+\w+\b/gi, "");
+
+    const stop = new Set([
+      "find", "search", "look", "show", "get", "list", "me", "a", "an", "the",
+      "for", "in", "at", "to", "and", "or", "as", "is", "be", "by", "of",
+      "job", "jobs", "role", "roles", "position", "positions", "opening",
+      "openings", "opportunity", "recent", "new", "latest", "available",
+      "hiring", "remote", "hybrid", "onsite", "use", "mcp", "tool", "similar",
+      "like", "some", "any", "can", "you", "please", "help", "want", "need",
+      "with", "that", "this", "are", "linkedin", "indeed", "from", "keyword",
+      "keywords", "hour", "hours", "day", "days", "week", "past", "last",
+      "within", "using", "based",
+    ]);
+
+    return cleaned
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w) => w.replace(/[^a-z0-9+#.]/g, ""))
+      // >= 2 keeps "AI", "ML", "UI"; reject pure-digit tokens (leftover time nums)
+      .filter((w) => w.length >= 2 && !stop.has(w) && !/^\d+$/.test(w))
+      .slice(0, 6);
+  };
+
+  /** Parse hours window from phrases like "24hour", "48 hours", "last week". */
+  const parseHoursFromQuery = (query: string): number => {
+    // "24hour" / "48hours" (no space)
+    const compact = query.match(/\b(\d+)hours?\b/i);
+    if (compact) return parseInt(compact[1]);
+    // "24 hours" / "48 h"
+    const spaced = query.match(/\b(\d+)\s*h(?:ours?)?\b/i);
+    if (spaced) return parseInt(spaced[1]);
+    if (/\bweek\b/i.test(query)) return 168;
+    if (/\bmonth\b/i.test(query)) return 720;
+    // Default: 7 days — more likely to surface results from free APIs
+    return 168;
+  };
+
+  /**
+   * Intent detection — is this a "find/search jobs" request vs a URL/JD paste?
+   * The two are mutually exclusive: URL paste → fetch+score, search intent → search.
+   */
+  const isFindJobsIntent = (content: string): boolean =>
+    /\b(find|search|look\s+for|show\s+me|get\s+me|list)\b.{0,60}\b(job|role|position|opening|opportunit)/i.test(content);
+
+  const runJobTools = useCallback(async (content: string) => {
+    const urlMatch = content.match(/https?:\/\/[^\s<>"']+/);
+    const url = urlMatch ? urlMatch[0].replace(/[.,)>"']+$/, "") : null;
+    const isLongJD = !url && content.length > 200 &&
+      /\b(requirements|qualifications|responsibilities|we are looking|we're looking|years of experience|apply)\b/i.test(content);
+    const wantsSearch = !url && !isLongJD && isFindJobsIntent(content);
+
+    setJobTools([]);
+
+    // ── Branch A: URL pasted → fetch then score ─────────────────────────────
+    if (url) {
+      setJobTools([{ tool: "fetch", status: "loading" }]);
+      let fetchedText = "";
+      try {
+        const r = await fetch("/api/job/fetch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const d = await r.json();
+        setJobTools([{ tool: "fetch", status: "done", result: d }]);
+        fetchedText = d.text ?? "";
+      } catch {
+        setJobTools([{ tool: "fetch", status: "error" }]);
+      }
+
+      const jd = fetchedText || content;
+      if (jd.length > 50) {
+        setJobTools((prev) => [...prev, { tool: "score", status: "loading" }]);
+        try {
+          const r = await fetch("/api/job/score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ job_description: jd }),
+          });
+          const d = await r.json();
+          lastJobKeywordsRef.current = (d.keywords ?? []).slice(0, 5);
+          setJobTools((prev) =>
+            prev.map((t) => t.tool === "score" ? { tool: "score", status: "done", result: d } : t)
+          );
+        } catch {
+          setJobTools((prev) =>
+            prev.map((t) => t.tool === "score" ? { tool: "score", status: "error" } : t)
+          );
+        }
+      }
+      return;
+    }
+
+    // ── Branch B: Pasted JD text → score only ───────────────────────────────
+    if (isLongJD) {
+      setJobTools([{ tool: "score", status: "loading" }]);
+      try {
+        const r = await fetch("/api/job/score", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ job_description: content }),
+        });
+        const d = await r.json();
+        lastJobKeywordsRef.current = (d.keywords ?? []).slice(0, 5);
+        setJobTools([{ tool: "score", status: "done", result: d }]);
+      } catch {
+        setJobTools([{ tool: "score", status: "error" }]);
+      }
+      return;
+    }
+
+    // ── Branch C: "find/search jobs" intent → search ─────────────────────────
+    if (wantsSearch) {
+      // Prefer keywords from the last scored JD; fall back to query extraction
+      const keywords =
+        lastJobKeywordsRef.current.length > 0
+          ? lastJobKeywordsRef.current
+          : extractKeywordsFromQuery(content);
+
+      if (keywords.length === 0) return;
+
+      const hours = parseHoursFromQuery(content);
+
+      setJobTools([{ tool: "search", status: "loading", keywords }]);
+      try {
+        const r = await fetch("/api/job/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keywords, hours }),
+        });
+        const d = await r.json();
+        setJobTools([{ tool: "search", status: "done", result: d, keywords }]);
+      } catch {
+        setJobTools([{ tool: "search", status: "error", keywords }]);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Main send handler ───────────────────────────────────────────────────────
+
   const handleSend = useCallback(async (content: string) => {
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -81,12 +234,25 @@ export default function ChatPage() {
     setContactState("idle");
     setPendingQuestion("");
 
+    if (jobMode) {
+      // For pure "find jobs" queries: run tools only, skip KB entirely
+      if (isFindJobsIntent(content) && !content.match(/https?:\/\//)) {
+        runJobTools(content);
+        setLoading(false);
+        return;
+      }
+      // URL/JD paste: run tools in parallel alongside the chat stream
+      runJobTools(content);
+    } else {
+      setJobTools([]);
+    }
+
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
       const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: content, history }),
+        body: JSON.stringify({ message: content, history, job_mode: jobMode }),
       });
 
       if (!res.ok) throw new Error("Failed to get response");
@@ -187,7 +353,7 @@ export default function ChatPage() {
     } finally {
       setLoading(false);
     }
-  }, [messages]);
+  }, [messages, jobMode, runJobTools]);
 
   const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -358,6 +524,16 @@ export default function ChatPage() {
           {messages.map((m) => (
             <ChatMessageBubble key={m.id} message={m} />
           ))}
+
+          {/* Job tool cards — shown when job mode is active */}
+          {jobTools.length > 0 && (
+            <div className="flex flex-col gap-3">
+              {jobTools.map((data, i) => (
+                <JobToolCard key={i} data={data} />
+              ))}
+            </div>
+          )}
+
           {loading && <TypingIndicator />}
 
           {contactState !== "idle" && (
@@ -431,6 +607,8 @@ export default function ChatPage() {
             onSend={(message) => handleSend(message)}
             isLoading={loading || streaming}
             placeholder={`Ask anything about ${ownerName}…`}
+            jobMode={jobMode}
+            onJobModeChange={setJobMode}
           />
         </div>
       </div>

@@ -8,7 +8,7 @@ export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   console.log(LOG_TAG, "request start");
   try {
-    const { message, history } = await request.json();
+    const { message, history, job_mode } = await request.json();
 
     if (!message || typeof message !== "string") {
       console.warn(LOG_TAG, "bad request: message required");
@@ -17,12 +17,12 @@ export async function POST(request: NextRequest) {
 
     const url = `${BACKEND_URL}/api/chat/stream`;
     const fromEnv = !!(process.env.NEXT_PUBLIC_BACKEND_URL ?? process.env.BACKEND_URL);
-    console.log(LOG_TAG, "fetching backend", { fromEnv, url: url.replace(/^https?:\/\/[^/]+/, "***"), messageLen: message.length });
+    console.log(LOG_TAG, "fetching backend", { fromEnv, url: url.replace(/^https?:\/\/[^/]+/, "***"), messageLen: message.length, job_mode: !!job_mode });
 
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history: history || [] }),
+      body: JSON.stringify({ message, history: history || [], job_mode: !!job_mode }),
     });
 
     const contentType = res.headers.get("content-type") ?? "";

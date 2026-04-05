@@ -100,12 +100,12 @@ def load_document_md() -> str:
             for k, v in frontmatter_meta.items():
                 doc.metadata[k] = v
 
-        # doc_type: prefer frontmatter "type", else parent folder name
+        # doc_type: prefer frontmatter "type", else parent folder name; always lowercase
         if "type" in doc.metadata:
-            doc.metadata["doc_type"] = doc.metadata["type"]
+            doc.metadata["doc_type"] = doc.metadata["type"].lower()
         else:
             parent = os.path.basename(os.path.dirname(source_path))
-            doc.metadata["doc_type"] = parent or os.path.basename(DATA_DIR)
+            doc.metadata["doc_type"] = (parent or os.path.basename(DATA_DIR)).lower()
 
         # source: just the filename
         if raw_source:

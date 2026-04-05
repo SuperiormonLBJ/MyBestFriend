@@ -180,7 +180,7 @@ def _apply_metadata_boost(docs: list, intent: dict) -> list:
     for doc in docs:
         meta = doc.metadata
         boost = 0
-        if intent["doc_type"] and meta.get("doc_type") == intent["doc_type"]:
+        if intent["doc_type"] and (meta.get("doc_type") or "").lower() == intent["doc_type"]:
             boost += 2
         if intent["year"] and str(meta.get("year", "")) == intent["year"]:
             boost += 1
