@@ -465,12 +465,25 @@ def score_job_fit(job_description: str, top_k: int = 5) -> dict:
     Steps:
     1. Extract structured requirements via extract_job_requirements()
     2. Fetch relevant KB docs via get_job_context()
-    3. Keyword-match each technical requirement against retrieved docs
+    3. LLM-assess each technical requirement against KB context (same LLM path as chat reply)
     4. Return score (0-100), matched/missing lists, keywords, and a context snippet.
-
-    No extra LLM call — requirement matching is done with keyword overlap.
     """
+    import json as _json
     from src.rag_retrieval import extract_job_requirements, get_job_context
+
+    # Guard: if input looks like a bare URL rather than a real JD, return empty score
+    stripped = job_description.strip()
+    if stripped.startswith(("http://", "https://")) and "\n" not in stripped and len(stripped) < 500:
+        return {
+            "score": 0,
+            "matched_requirements": [],
+            "missing_requirements": [],
+            "keywords": [],
+            "culture_signals": [],
+            "doc_count": 0,
+            "context_snippet": "",
+            "error": "no_jd_text",
+        }
 
     reqs = extract_job_requirements(job_description)
     docs, context = get_job_context(job_description, reqs)
@@ -481,20 +494,57 @@ def score_job_fit(job_description: str, top_k: int = 5) -> dict:
 
     matched: list[str] = []
     missing: list[str] = []
-    for req in tech_reqs:
-        req_words = [w.lower() for w in req.split() if len(w) > 3]
-        if not req_words:
-            matched.append(req)
-            continue
-        threshold = max(1, len(req_words) // 2)
-        covered = any(
-            sum(1 for kw in req_words if kw in doc.page_content.lower()) >= threshold
-            for doc in docs
-        )
-        if covered:
-            matched.append(req)
-        else:
-            missing.append(req)
+
+    if tech_reqs and context:
+        # Use LLM to assess requirements against KB context — same signal path as the chat reply
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import SystemMessage, HumanMessage
+            from utils.config_loader import config
+
+            llm = ChatOpenAI(model=config.get_rewrite_model(), temperature=0)
+            reqs_text = "\n".join(f"- {r}" for r in tech_reqs)
+            system = SystemMessage(
+                content=(
+                    "You are assessing how well a candidate's profile matches job requirements. "
+                    "Given a knowledge base excerpt about the candidate and a list of job requirements, "
+                    "classify each requirement as either MATCHED (clearly evidenced in the profile) "
+                    "or MISSING (not evidenced). "
+                    "Return strict JSON: {\"matched\": [list of matched requirement strings], "
+                    "\"missing\": [list of missing requirement strings]}. "
+                    "Copy the requirement strings verbatim. No extra text."
+                )
+            )
+            human = HumanMessage(
+                content=(
+                    f"CANDIDATE PROFILE (knowledge base):\n{context[:3000]}\n\n"
+                    f"JOB REQUIREMENTS:\n{reqs_text}\n\n"
+                    "Return JSON now."
+                )
+            )
+            response = llm.invoke([system, human])
+            data = _json.loads(response.content or "{}")
+            matched = [r for r in data.get("matched", []) if isinstance(r, str)]
+            missing = [r for r in data.get("missing", []) if isinstance(r, str)]
+
+            # Fallback: if LLM returned nothing useful, put unclassified reqs in missing
+            classified = set(matched) | set(missing)
+            for req in tech_reqs:
+                if req not in classified:
+                    missing.append(req)
+        except Exception:
+            # Fallback to keyword matching if LLM call fails
+            for req in tech_reqs:
+                req_words = [w.lower() for w in req.split() if len(w) >= 2]
+                if not req_words:
+                    matched.append(req)
+                    continue
+                threshold = max(1, len(req_words) // 2)
+                covered = any(
+                    sum(1 for kw in req_words if kw in doc.page_content.lower()) >= threshold
+                    for doc in docs
+                )
+                (matched if covered else missing).append(req)
 
     total = len(tech_reqs)
     req_score = int(len(matched) / total * 75) if total else 50

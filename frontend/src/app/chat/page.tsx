@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Fragment } from "react";
 import { SquarePen } from "lucide-react";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { ChatMessageBubble, type ChatMessage, type SourceItem } from "@/components/chat-message";
@@ -37,7 +37,7 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [jobMode, setJobMode] = useState(false);
-  const [jobTools, setJobTools] = useState<JobToolCardData[]>([]);
+  const [jobToolsMap, setJobToolsMap] = useState<Record<string, JobToolCardData[]>>({});
   // Keywords saved after scoring a JD — reused when user asks to "find similar jobs"
   const lastJobKeywordsRef = useRef<string[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState("");
@@ -63,7 +63,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, loading, contactState]);
+  }, [messages, loading, contactState, jobToolsMap]);
 
   // Fetch knowledge scope for onboarding display
   useEffect(() => {
@@ -126,18 +126,24 @@ export default function ChatPage() {
   const isFindJobsIntent = (content: string): boolean =>
     /\b(find|search|look\s+for|show\s+me|get\s+me|list)\b.{0,60}\b(job|role|position|opening|opportunit)/i.test(content);
 
-  const runJobTools = useCallback(async (content: string) => {
+  const setToolsFor = useCallback((msgId: string, updater: JobToolCardData[] | ((prev: JobToolCardData[]) => JobToolCardData[])) => {
+    setJobToolsMap((map) => {
+      const prev = map[msgId] || [];
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      return { ...map, [msgId]: next };
+    });
+  }, []);
+
+  const runJobTools = useCallback(async (content: string, msgId: string) => {
     const urlMatch = content.match(/https?:\/\/[^\s<>"']+/);
     const url = urlMatch ? urlMatch[0].replace(/[.,)>"']+$/, "") : null;
     const isLongJD = !url && content.length > 200 &&
       /\b(requirements|qualifications|responsibilities|we are looking|we're looking|years of experience|apply)\b/i.test(content);
     const wantsSearch = !url && !isLongJD && isFindJobsIntent(content);
 
-    setJobTools([]);
-
     // ── Branch A: URL pasted → fetch then score ─────────────────────────────
     if (url) {
-      setJobTools([{ tool: "fetch", status: "loading" }]);
+      setToolsFor(msgId, [{ tool: "fetch", status: "loading" }]);
       let fetchedText = "";
       try {
         const r = await fetch("/api/job/fetch", {
@@ -146,15 +152,15 @@ export default function ChatPage() {
           body: JSON.stringify({ url }),
         });
         const d = await r.json();
-        setJobTools([{ tool: "fetch", status: "done", result: d }]);
+        setToolsFor(msgId, [{ tool: "fetch", status: "done", result: d }]);
         fetchedText = d.text ?? "";
       } catch {
-        setJobTools([{ tool: "fetch", status: "error" }]);
+        setToolsFor(msgId, [{ tool: "fetch", status: "error" }]);
       }
 
-      const jd = fetchedText || content;
-      if (jd.length > 50) {
-        setJobTools((prev) => [...prev, { tool: "score", status: "loading" }]);
+      const jd = fetchedText.length > 100 ? fetchedText : "";
+      if (jd.length > 100) {
+        setToolsFor(msgId, (prev) => [...prev, { tool: "score", status: "loading" }]);
         try {
           const r = await fetch("/api/job/score", {
             method: "POST",
@@ -162,12 +168,18 @@ export default function ChatPage() {
             body: JSON.stringify({ job_description: jd }),
           });
           const d = await r.json();
-          lastJobKeywordsRef.current = (d.keywords ?? []).slice(0, 5);
-          setJobTools((prev) =>
-            prev.map((t) => t.tool === "score" ? { tool: "score", status: "done", result: d } : t)
-          );
+          if (d.error === "no_jd_text") {
+            setToolsFor(msgId, (prev) =>
+              prev.map((t) => t.tool === "score" ? { tool: "score", status: "error" } : t)
+            );
+          } else {
+            lastJobKeywordsRef.current = (d.keywords ?? []).slice(0, 5);
+            setToolsFor(msgId, (prev) =>
+              prev.map((t) => t.tool === "score" ? { tool: "score", status: "done", result: d } : t)
+            );
+          }
         } catch {
-          setJobTools((prev) =>
+          setToolsFor(msgId, (prev) =>
             prev.map((t) => t.tool === "score" ? { tool: "score", status: "error" } : t)
           );
         }
@@ -177,7 +189,7 @@ export default function ChatPage() {
 
     // ── Branch B: Pasted JD text → score only ───────────────────────────────
     if (isLongJD) {
-      setJobTools([{ tool: "score", status: "loading" }]);
+      setToolsFor(msgId, [{ tool: "score", status: "loading" }]);
       try {
         const r = await fetch("/api/job/score", {
           method: "POST",
@@ -186,16 +198,15 @@ export default function ChatPage() {
         });
         const d = await r.json();
         lastJobKeywordsRef.current = (d.keywords ?? []).slice(0, 5);
-        setJobTools([{ tool: "score", status: "done", result: d }]);
+        setToolsFor(msgId, [{ tool: "score", status: "done", result: d }]);
       } catch {
-        setJobTools([{ tool: "score", status: "error" }]);
+        setToolsFor(msgId, [{ tool: "score", status: "error" }]);
       }
       return;
     }
 
     // ── Branch C: "find/search jobs" intent → search ─────────────────────────
     if (wantsSearch) {
-      // Prefer keywords from the last scored JD; fall back to query extraction
       const keywords =
         lastJobKeywordsRef.current.length > 0
           ? lastJobKeywordsRef.current
@@ -205,7 +216,7 @@ export default function ChatPage() {
 
       const hours = parseHoursFromQuery(content);
 
-      setJobTools([{ tool: "search", status: "loading", keywords }]);
+      setToolsFor(msgId, [{ tool: "search", status: "loading", keywords }]);
       try {
         const r = await fetch("/api/job/search", {
           method: "POST",
@@ -213,13 +224,13 @@ export default function ChatPage() {
           body: JSON.stringify({ keywords, hours }),
         });
         const d = await r.json();
-        setJobTools([{ tool: "search", status: "done", result: d, keywords }]);
+        setToolsFor(msgId, [{ tool: "search", status: "done", result: d, keywords }]);
       } catch {
-        setJobTools([{ tool: "search", status: "error", keywords }]);
+        setToolsFor(msgId, [{ tool: "search", status: "error", keywords }]);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setToolsFor]);
 
   // ── Main send handler ───────────────────────────────────────────────────────
 
@@ -235,16 +246,12 @@ export default function ChatPage() {
     setPendingQuestion("");
 
     if (jobMode) {
-      // For pure "find jobs" queries: run tools only, skip KB entirely
       if (isFindJobsIntent(content) && !content.match(/https?:\/\//)) {
-        runJobTools(content);
+        runJobTools(content, userMessage.id);
         setLoading(false);
         return;
       }
-      // URL/JD paste: run tools in parallel alongside the chat stream
-      runJobTools(content);
-    } else {
-      setJobTools([]);
+      runJobTools(content, userMessage.id);
     }
 
     try {
@@ -385,6 +392,7 @@ export default function ChatPage() {
   const handleNewChat = () => {
     try { localStorage.removeItem(HISTORY_KEY); } catch {}
     setMessages([]);
+    setJobToolsMap({});
     setContactState("idle");
     setPendingQuestion("");
     setContactName("");
@@ -522,17 +530,17 @@ export default function ChatPage() {
         )}
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           {messages.map((m) => (
-            <ChatMessageBubble key={m.id} message={m} />
+            <Fragment key={m.id}>
+              <ChatMessageBubble message={m} />
+              {jobToolsMap[m.id] && jobToolsMap[m.id].length > 0 && (
+                <div className="flex flex-col gap-3">
+                  {jobToolsMap[m.id].map((data, i) => (
+                    <JobToolCard key={i} data={data} />
+                  ))}
+                </div>
+              )}
+            </Fragment>
           ))}
-
-          {/* Job tool cards — shown when job mode is active */}
-          {jobTools.length > 0 && (
-            <div className="flex flex-col gap-3">
-              {jobTools.map((data, i) => (
-                <JobToolCard key={i} data={data} />
-              ))}
-            </div>
-          )}
 
           {loading && <TypingIndicator />}
 
