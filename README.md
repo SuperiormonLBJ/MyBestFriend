@@ -1,6 +1,6 @@
 # MyBestFriend – Personal Digital Twin
 
-MyBestFriend is a production-grade *personal digital twin*: a RAG chatbot and admin console that answers questions about a single person (the “owner”) using only curated, versioned documents. It runs as a FastAPI backend, a Next.js frontend, and a Supabase-backed Postgres + vector store.
+MyBestFriend is a production-grade *personal digital twin*: a multi-agent RAG system and admin console that answers questions about a single person (the "owner") using only curated, versioned documents. It runs as a FastAPI backend, a Next.js frontend, and a Supabase-backed Postgres + vector store. The default execution mode is a **LangGraph supervisor + parallel domain specialist agents**, with MCP server support for external LLM integrations.
 
 ## Frontend showcase
 
@@ -8,13 +8,13 @@ Next.js UI: sidebar (Chatbot, Job Preparation, Admin), dark theme, quick prompts
 
 ### Chatbot
 
-Ethereal-style background, quick prompts, prompt box with optional voice (Web Speech API in supported browsers).
+Ethereal-style background, quick prompts, topic filter chips (Personal & Hobbies, Career & Work, CV, Projects), and a prompt box with optional voice input (Web Speech API in supported browsers).
 
 ![Chatbot](/frontend/docs/screenshots/chat.png)
 
 ### Job preparation
 
-Paste a job description, optional cover-letter word limit, then switch between cover letter, resume suggestions, and interview questions.
+Paste a job description, optional cover-letter word limit, then generate tailored cover letter, resume suggestions, and interview questions.
 
 ![Job preparation](/frontend/docs/screenshots/job-preparation.png)
 
@@ -26,27 +26,33 @@ Entry points for Knowledge Base, Settings, Prompts, and Eval.
 
 ### Admin — Knowledge Base
 
-Inspect and manage documents in the vector store (with backend support for add/delete).
+Inspect and manage documents in the vector store (127 chunks across 4 categories: CV, career, personal, project). Add/delete documents; re-ingest all.
 
 ![Admin knowledge](/frontend/docs/screenshots/admin-knowledge.png)
 
 ### Admin — Settings
 
-Runtime display and model-related options from config.
+Edit identity (app name, owner name), notification email, and AI models — changes save to Supabase immediately.
 
 ![Admin settings](/frontend/docs/screenshots/admin-settings.png)
 
 ### Admin — Prompts
 
-Edit Supabase-backed LLM system prompts.
+Edit all 21 Supabase-backed LLM system prompts, including agent-specific prompts for the multi-agent graph.
 
 ![Admin prompts](/frontend/docs/screenshots/admin-prompts.png)
 
-### Admin — Eval
+### Admin — Eval (RAG evaluation)
 
-Run retrieval and LLM quality evaluation against the configured dataset.
+Run retrieval and LLM quality evaluation against the configured dataset. Shows LLM scores (accuracy, relevance, completeness, confidence) and retrieval metrics (MRR, keyword coverage).
 
 ![Admin eval](/frontend/docs/screenshots/admin-eval.png)
+
+### Admin — Eval (Multi-agent evaluation)
+
+Dedicated multi-agent evaluation tab with orchestration metrics: Agent Routing Accuracy (ARA), Context Redundancy Ratio (ACRR), Synthesis Faithfulness, Parallel Efficiency, and per-agent MRR.
+
+![Admin eval multi-agent](/frontend/docs/screenshots/admin-eval-multi-agent.png)
 
 ---
 
@@ -55,148 +61,129 @@ Run retrieval and LLM quality evaluation against the configured dataset.
 ### 1.1 Chat experience
 
 - **Owner-centric Q&A**: Answers questions about the owner (career, projects, education, hobbies, personality) using only ingested markdown documents.
-- **Streaming UI**: Next.js 16 + React 19 chat interface with token streaming, desktop/mobile friendly, source citations, and optional **voice input** (Web Speech API where available; otherwise a fallback message).
-- **Unknown-answer handling**: If the RAG stack can’t confidently answer, the backend sets `no_info` and the UI shows a dedicated fallback state plus a contact form.
-- **Local history**: Conversation history is persisted in `localStorage` so refreshes don’t lose the thread.
+- **Streaming UI**: Next.js + React chat interface with token streaming, topic filter chips, source citations, and optional **voice input** (Web Speech API where available).
+- **Unknown-answer handling**: If the RAG stack can't confidently answer, the backend sets `no_info` and the UI shows a dedicated fallback state plus a contact form.
+- **Local history**: Conversation history persisted in `localStorage` so refreshes don't lose the thread.
+- **Agent status events**: In multi-agent mode, the stream emits `{"agent_status": "<name>"}` progress events before synthesis tokens begin, so the UI can show which specialist is active.
 
-### 1.2 RAG pipeline
+### 1.2 Multi-agent RAG pipeline (default)
 
-- **Markdown-based knowledge base**:
-  - Loads markdown documents from a configured data directory (via `ConfigLoader`) under `backend/`.
-  - Supports YAML-style frontmatter (`--- ... ---`) with fields like `doc_type`, `type`, `year`, `importance`, `title`, etc.
-- **Chunking & embeddings**:
-  - Splits documents into section-level chunks using `##` / `###` headings and attaches lightweight labels (e.g. project title, section name) directly in chunk text.
-  - Embeds chunks using the configured embedding model and stores them in a Supabase `document_chunks` table via `SupabaseVectorStore`.
-- **Live reload**:
-  - `/api/ingest` fully re-ingests documents, rebuilds the vector store, and keeps the in-memory retriever hot without restarting the backend.
+The primary execution mode (`USE_MULTI_AGENT=true`) uses a **LangGraph supervisor + parallel domain specialist graph**:
 
-### 1.3 Job preparation (LLM-based JD analysis)
+```
+intent_classifier → supervisor → [Send fan-out]
+                                  ├─ career_agent    ─┐
+                                  ├─ project_agent   ─┤ (parallel)
+                                  ├─ skills_agent    ─┤
+                                  ├─ personal_agent  ─┤
+                                  └─ job_prep_agent  ─┘
+                                          ↓ [fan-in via operator.add reducers]
+                              grounding_guard → synthesis → hitl_review → trace_log → END
+```
 
-- **LLM-first JD parsing**:
-  - Backend uses `extract_job_requirements()` (small “rewrite” model) to turn arbitrary job descriptions into JSON:
-    - `technical_requirements: string[]`
-    - `culture: string[]`
-    - `keywords: string[]`
-  - A simple heuristic extractor is kept only as a fallback.
-- **Tailored cover letters + guidance**:
-  - `POST /api/job/cover-letter`: generates a concise cover letter using RAG context + structured JD analysis.
-  - `POST /api/job/prepare`: runs the full flow once (cover letter, resume improvement suggestions, interview questions).
-  - `JobPrepResponse` returns the cover letter and the structured `technical_requirements`, `culture`, and `keywords`.
-- **Job-prep UI**:
-  - The Job Preparation page first shows **Job analysis** (requirements, culture bullets, keyword tags) and then the generated cover letter, so you can inspect the analysis before using the output.
+- **`intent_classifier`**: classifies query → decides which specialist agents to activate (structured output via `INTENT_CLASSIFIER_PROMPT`)
+- **`supervisor`**: initialises token budget + run ID, dispatches via `Send` API
+- **Specialist agents**: each calls `search_knowledge_by_domain()` → `rerank_documents()` → `build_agent_result()`
+- **`grounding_guard`**: deduplicates docs, enforces `MULTI_AGENT_TOKEN_BUDGET`, runs self-check
+- **`synthesis`**: generates final answer with multi-source attribution (`SYNTHESIS_AGENT_PROMPT`)
+- **`trace_log`**: fire-and-forget write to `agent_run_traces` Supabase table
 
-### 1.4 Knowledge management & admin UI
+**Fallback modes** (configured via flags):
+- `USE_GRAPH=true` → `conversation_graph.py` (legacy 6-node LangGraph)
+- default → `rag_retrieval.py::generate_answer_stream()` (direct RAG)
 
-Admin panel (Next.js) with secure access via an admin key:
+### 1.3 RAG pipeline internals
 
-- **Knowledge base view**:
-  - Tree of ingested documents, quick stats, and links to inspect content.
-- **Document operations**:
-  - Add markdown documents via the admin UI → backend `/api/documents` (write file, chunk, embed, sync to Supabase).
-  - Delete documents via `/api/documents/{source}` (disk, vector store, and Supabase are all kept in sync).
-- **Config management**:
-  - `/api/config` + `/api/config/push` + `/api/config` `PUT` let you:
-    - View effective runtime config (models, flags, owner/app name, retrieval options).
-    - Push in-memory config back to Supabase.
-    - Update selected fields from the admin settings page.
-- **Prompt management**:
-  - All major system prompts are stored in a Supabase `prompts` table and surfaced in the Prompts admin screen:
-    - Core generator, reranker, evaluator, job-prep prompts…
-    - **Eval dataset generator prompt** (`EVAL_DATASET_GENERATOR_PROMPT`) used to synthesize test cases from your ingested knowledge.
+- **Markdown-based knowledge base**: Loads markdown documents from `backend/data/` with YAML frontmatter (`doc_type`, `type`, `year`, `importance`, `title`).
+- **Chunking & embeddings**: Splits by `##`/`###` headers, attaches labels, embeds via `text-embedding-3-large`, stores in Supabase `document_chunks`.
+- **Hybrid search**: Semantic + lexical search (`HYBRID_SEARCH_ENABLED=true`, `LEXICAL_WEIGHT=0.3`).
+- **Live reload**: `/api/ingest` fully re-ingests documents without restarting the backend.
 
-### 1.5 Evaluation & dataset management
+### 1.4 Job preparation (LLM-based JD analysis)
 
-#### 1.5.1 Eval runs
+- **LLM-first JD parsing**: `extract_job_requirements()` (rewrite model) extracts `technical_requirements`, `culture`, and `keywords` from arbitrary job descriptions.
+- **Tailored output**: `POST /api/job/cover-letter` and `POST /api/job/prepare` generate cover letter, resume improvement suggestions, and interview questions using RAG context + structured JD analysis.
+- **Job-prep UI**: Shows job analysis (requirements, culture bullets, keyword tags) before the generated cover letter.
 
-- **Backend APIs**:
-  - `POST /api/evaluate` — runs an async evaluation over the current test set:
-    - LLM answer quality (accuracy, relevance, completeness, confidence, score).
-    - Retrieval metrics (MRR, keyword coverage).
-  - `GET /api/evaluate/{job_id}` — poll job status.
-  - `GET /api/evaluate/latest` — fetch last completed result from Supabase (`eval_results` table).
-- **Admin eval UI** (`/admin/eval`):
-  - Run evaluation with a single button.
-  - Live status banner with elapsed time.
-  - Cards for:
-    - **LLM Evaluation** (scores + average feedback).
-    - **Retrieval Metrics** (MRR, keyword coverage).
-    - **Config at time of run** (frozen snapshot so you know which models/settings were used).
+### 1.5 MCP server
 
-#### 1.5.2 Evaluation dataset manager (Supabase-backed)
+Exposes the knowledge base as 6 tools for Claude Desktop and any MCP-compatible LLM client:
 
-The evaluation test set is now a first-class, Supabase-backed dataset, editable in the admin UI:
+| Tool | Description |
+|------|-------------|
+| `search_knowledge` | Primary knowledge retrieval (hybrid search + rerank) |
+| `get_time_period_summary` | All chunks for a given year |
+| `list_domain_items` | Titles + years by domain |
+| `get_knowledge_scope` | Doc type counts + year range |
+| `generate_structured_bio` | Bio in professional/casual/conference style |
+| `extract_job_fit_signals` | Job description analysis against knowledge base |
 
-- **Data model**:
-  - Supabase table `eval_dataset` (per-owner) with:
-    - `question: text`
-    - `ground_truth: text`
-    - `category: text`
-    - `keywords: jsonb` (string array)
-    - `owner_id`, timestamps, etc.
-- **Source-of-truth behavior**:
-  - `load_test_questions()` in the backend:
-    - Loads tests from `eval_dataset` for the current `owner_id`.
-    - If empty, seeds from `backend/evaluation/eval_data.jsonl` **once** and writes them into Supabase.
-    - Falls back to JSONL-only if Supabase is unavailable.
-- **Eval Dataset tab (admin)**:
-  - `/admin/eval` is split into two tabs:
-    - **Run evaluation**
-    - **Evaluation dataset**
-  - **Dataset table** with columns:
-    - `Question`
-    - `Ground truth`
-    - `Keywords`
-    - `Category`
-  - **Inline editing**:
-    - Textareas for `question` and `ground_truth`.
-    - Editable input for `category`.
-    - Comma-separated string for `keywords` (mapped to a string array).
-  - **Actions**:
-    - **Add row** (new row at the top).
-    - **Save changes** (writes the full table to Supabase via `PUT /api/eval/dataset`).
-    - **Clear** (with confirmation; clears Supabase and UI via `POST /api/eval/dataset/clear`).
-    - **Upload JSONL**:
-      - Client-side parse of `.jsonl`/`.txt` file into rows.
-      - Validates each line has `question` and `ground_truth`.
-      - Only updates the UI; nothing hits Supabase until you press **Save changes**.
-    - **Download JSONL**:
-      - `GET /api/eval/dataset/download` returns canonical JSONL:
-        - Each line is `{ "question", "ground_truth", "category", "keywords": [] }`.
-    - **AI generate**:
-      - Configurable **AI count** (default 20, min 1, max 200) sent as `n` to `/api/eval/dataset/generate`.
-      - Appends new test cases to the existing dataset.
-      - Shows a loader while generating and a message like `AI generated 20 test cases.` on success.
+Run with:
+```bash
+uv run python -m src.mcp_server
+```
 
-#### 1.5.3 AI-generated evaluation questions
+Register with Claude Desktop:
+```json
+{
+  "mcpServers": {
+    "mybestfriend": {
+      "command": "uv",
+      "args": ["run", "--project", "/path/to/backend", "python", "-m", "src.mcp_server"]
+    }
+  }
+}
+```
 
-- **Backend logic**:
-  - `/api/eval/dataset/generate`:
-    - Samples documents from Supabase `document_chunks` (`content` + `metadata`).
-    - Builds a structured context with headers like `[project] LLM-Based Code Reviewer (2024)` followed by content.
-    - Passes this context into the Supabase-managed prompt `EVAL_DATASET_GENERATOR_PROMPT`.
-    - The LLM returns a JSON array of `{question, ground_truth, category, keywords[]}` objects.
-    - Validates and appends them to `eval_dataset` for the current `owner_id`.
-- **Prompt is configurable**:
-  - `EVAL_DATASET_GENERATOR_PROMPT` lives in `utils/prompts.py` and is registered in `prompt_manager`.
-  - You can edit it from the Prompts admin page to change style, categories, or difficulty of evaluation questions.
+### 1.6 Knowledge management & admin UI
 
-### 1.6 User contact & handoff
+Admin panel (Next.js) with optional access control via `ADMIN_API_KEY`:
 
-- When `no_info` is true from `/api/chat`:
-  - The frontend shows a contact form (name, email, question).
-  - `POST /api/contact` sends an email to the owner via SMTP using credentials and `RECIPIENT_EMAIL` from config.
+- **Knowledge base view**: Tree of ingested documents with chunk counts by category (CV, career, personal, project). Re-ingest all with one click.
+- **Document operations**: Add markdown via admin UI → `/api/documents` (write, chunk, embed, sync to Supabase). Delete → disk, vector store, and Supabase kept in sync.
+- **Config management**: `/api/config` — view effective runtime config; edit identity, notifications, and AI models from the Settings page.
+- **Prompt management**: All 21 system prompts stored in Supabase `prompts` table, editable from the Prompts admin screen. Includes agent-specific prompts (`CAREER_AGENT_PROMPT`, `GROUNDING_GUARD_PROMPT`, `SYNTHESIS_AGENT_PROMPT`, etc.).
 
-### 1.7 Health & observability
+### 1.7 Evaluation & dataset management
 
-- `GET /health` — simple health check.
-- `GET /` — minimal JSON descriptor with service name and health URL.
-- Frontend logs chat streaming calls with context to help debug connectivity/timeouts.
+#### 1.7.1 RAG evaluation
 
-### 1.8 Tech stack
+- `POST /api/evaluate` — async RAGAS evaluation over the test set:
+  - LLM answer quality: accuracy, relevance, completeness, confidence, overall score (3.9/5 on last run).
+  - Retrieval metrics: MRR (0.630), keyword coverage (87.4%).
+- `GET /api/evaluate/{job_id}` — poll job status.
+- `GET /api/evaluate/latest` — fetch last completed result from Supabase.
 
-- **Backend**: Python 3.12, FastAPI, Uvicorn, LangChain, Supabase vector store, RAG evaluation tools.
-- **Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS v4, Lucide icons, Caveat + Quicksand typography (indigo-forward UI).
-- **Storage & infra**: Supabase Postgres (documents, chunks, eval datasets, prompts, config); Vercel (default) for frontend; Railway/Render/Fly.io/Docker for the backend.
+#### 1.7.2 Multi-agent evaluation
+
+- `POST /api/evaluate/multi-agent` — 5 new metrics:
+  - **ARA** (Agent Routing Accuracy): fraction of queries routed to correct specialists.
+  - **ACRR** (Context Redundancy Ratio): duplicate context across agents (lower = better).
+  - **Synthesis Faithfulness**: grounded-answer fidelity score.
+  - **Parallel Efficiency**: speedup vs sequential execution.
+  - **Per-Agent MRR**: retrieval rank quality per specialist (career, skills, project, personal, job-prep).
+
+#### 1.7.3 Evaluation dataset manager
+
+- Supabase-backed `eval_dataset` table (per-owner): `question`, `ground_truth`, `category`, `keywords`.
+- Admin UI dataset tab: inline editing, add/delete rows, upload JSONL, download JSONL, AI-generate test cases via `/api/eval/dataset/generate`.
+- `load_test_questions()` seeds from `backend/evaluation/eval_data.jsonl` if the Supabase table is empty.
+
+### 1.8 Human-in-the-loop (HITL)
+
+Set `HITL_ENABLED=true` + build graph with checkpointing. Interrupted runs pause at the `hitl_review` node. Resume via `POST /api/agent/resume/{thread_id}`. Pending reviews listed at `GET /api/agent/pending-reviews`.
+
+### 1.9 User contact & handoff
+
+When `no_info` is true from `/api/chat`:
+- Frontend shows a contact form (name, email, question).
+- `POST /api/contact` sends email to owner via SMTP.
+
+### 1.10 Tech stack
+
+- **Backend**: Python 3.12, FastAPI, Uvicorn, LangChain, LangGraph, Supabase vector store, RAGAS evaluation.
+- **Frontend**: Next.js (App Router), React 19, Tailwind CSS v4, Lucide icons.
+- **Storage & infra**: Supabase Postgres (documents, chunks, eval datasets, prompts, config, agent traces); Vercel for frontend; Railway/Render/Fly.io/Docker for backend.
 
 ---
 
@@ -215,15 +202,16 @@ For provider-specific details, see `DEPLOYMENT.md`. This section covers the over
 
 2. **Backend: configure environment**
 
-   - Copy `backend/src/.env` and set:
-     - `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
-     - Model provider keys (e.g. OpenAI) used by `config.yaml`
-     - SMTP settings if you want email handoff:
-       - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`
-   - Adjust `backend/config.yaml`:
-     - `DATA_DIR` (where your markdown lives)
-     - Model names (`EMBEDDING_MODEL`, `GENERATOR_MODEL`, etc.)
-     - `frontend` section (`app_name`, `owner_name`)
+   Copy `backend/src/.env` and set:
+   - `OPENAI_API_KEY` — Required for LLM + embeddings
+   - `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
+   - SMTP settings (optional, for contact email): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`
+
+   Adjust `backend/config.yaml`:
+   - `DATA_DIR` — where your markdown knowledge base lives
+   - Model names (`EMBEDDING_MODEL`, `GENERATOR_MODEL`, etc.)
+   - `frontend` section (`app_name`, `owner_name`)
+   - `USE_MULTI_AGENT: true` (default) to enable the supervisor + specialist agent graph
 
 3. **Backend: run FastAPI**
 
@@ -248,83 +236,35 @@ For provider-specific details, see `DEPLOYMENT.md`. This section covers the over
 
    - Chat: `http://localhost:3000/chat`
    - Job preparation: `http://localhost:3000/job-preparation`
-   - Admin panel: `http://localhost:3000/admin` (requires admin key if configured)
+   - Admin panel: `http://localhost:3000/admin`
+
+6. **MCP server** (optional, for Claude Desktop)
+
+   ```bash
+   cd backend
+   uv run python -m src.mcp_server
+   ```
 
 ---
 
 ### 2.2 Backend deployment (Railway / Render / Fly.io / Docker)
 
-1. **Project root**
-
-   - Set the deployment working directory to `backend/`.
-   - Ensure `pyproject.toml`, `uv.lock`, and `src/` are present.
-
-2. **Install dependencies**
-
-   Examples:
-   - Railway (pip): `pip install -r requirements.txt`
-   - Render/Fly.io: `uv sync`
-
-3. **Start command**
-
-   Most platforms can use:
-
+1. Set deployment working directory to `backend/`.
+2. Install: `uv sync` (or `pip install -r requirements.txt` for Railway).
+3. Start command:
    ```bash
    PYTHONPATH=.:src uvicorn src.api_server:app --host 0.0.0.0 --port $PORT
    ```
-
-   If your host doesn’t provide `PORT`, choose one (e.g. `8080`) and configure the service to route traffic to it.
-
-4. **Environment variables**
-
-   Set the same values as your local `.env` in the cloud provider:
-
-   - `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
-   - Model provider keys
-   - SMTP variables (optional but required for contact email)
-   - Any extra config keys referenced by `config.yaml`
-
-5. **Health check**
-
-   - Visit `/health` on your backend URL, e.g.:
-
-     ```text
-     https://your-backend.example.com/health
-     ```
-
-   - Expect `{"status": "ok"}`.
+4. Environment variables: `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, SMTP vars.
+5. Health check: `GET /health` → `{"status": "ok"}`.
 
 ---
 
 ### 2.3 Frontend deployment (Vercel)
 
-1. **Import project**
-
-   - In Vercel, import the Git repo.
-   - Set the project root to `frontend/`.
-   - Framework preset: **Next.js** (App Router).
-
-2. **Configure environment**
-
-   - Set **one** of:
-     - `NEXT_PUBLIC_BACKEND_URL`
-     - `BACKEND_URL`
-   - Value: your backend base URL **without** trailing slash, e.g.:
-
-     ```text
-     https://your-backend.example.com
-     ```
-
-3. **Deploy**
-
-   - Vercel builds and deploys automatically.
-   - You’ll get a URL like `https://mybestfriend-yourname.vercel.app`.
-
-4. **CORS**
-
-   - Ensure the backend CORS config includes:
-     - `http://localhost:3000` (for local dev)
-     - Your Vercel URL (e.g. `https://mybestfriend-yourname.vercel.app`)
+1. Import the Git repo in Vercel, set project root to `frontend/`, framework preset: **Next.js**.
+2. Set `NEXT_PUBLIC_BACKEND_URL` (or `BACKEND_URL`) to your backend base URL (no trailing slash).
+3. Ensure the backend CORS config includes `http://localhost:3000` and your Vercel URL.
 
 ---
 
@@ -340,7 +280,7 @@ create table if not exists public.document_chunks (
   id uuid primary key default gen_random_uuid(),
   content text not null,
   metadata jsonb not null default '{}'::jsonb,
-  embedding vector(1536)  -- adjust dimension if your embedding model differs
+  embedding vector(1536)  -- text-embedding-3-large
 );
 
 -- Source documents (full markdown content + metadata)
@@ -359,14 +299,14 @@ create table if not exists public.app_config (
   value jsonb not null
 );
 
--- LLM prompts managed from the admin UI
+-- LLM prompts managed from the admin UI (21 total)
 create table if not exists public.prompts (
   key text primary key,
   content text not null,
   description text not null
 );
 
--- Latest evaluation result snapshot
+-- Latest RAG evaluation result snapshot
 create table if not exists public.eval_results (
   id integer primary key,
   status text,
@@ -393,18 +333,69 @@ create index if not exists idx_eval_dataset_owner_id
   on public.eval_dataset (owner_id);
 ```
 
-(If you don’t already have an `updated_at` trigger function, you can omit the trigger or add one later.)
+#### 2.4.3 Agent run traces table
+
+```sql
+create table if not exists public.agent_run_traces (
+  id uuid primary key default gen_random_uuid(),
+  run_id text not null,
+  owner_id text not null default 'default',
+  agents_activated text[] not null default '{}',
+  latencies jsonb not null default '{}'::jsonb,
+  token_budget_used integer,
+  result_summary jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_agent_run_traces_run_id
+  on public.agent_run_traces (run_id);
+```
 
 ---
 
-### 2.5 Operational checklist
+### 2.5 Key config flags
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `USE_MULTI_AGENT` | `true` | Enable supervisor + specialist agent graph |
+| `USE_GRAPH` | `false` | Enable legacy 6-node LangGraph (fallback) |
+| `MULTI_AGENT_TOKEN_BUDGET` | `12000` | Max context tokens across all agents |
+| `MULTI_AGENT_LOG_TRACES` | `true` | Write traces to `agent_run_traces` table |
+| `HYBRID_SEARCH_ENABLED` | `true` | Semantic + lexical search |
+| `LEXICAL_WEIGHT` | `0.3` | Weight for lexical component in hybrid search |
+| `TOP_K` | `5` | Docs retrieved per agent |
+| `GENERATOR_MODEL` | `gpt-4o` | Answer synthesis model |
+| `EMBEDDING_MODEL` | `text-embedding-3-large` | Embedding model |
+| `HITL_ENABLED` | `false` | Human-in-the-loop review for sensitive answers |
+| `ADMIN_API_KEY` | `""` | Empty = no auth (dev mode) |
+
+---
+
+### 2.6 New API endpoints (multi-agent)
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/agent/graph` | Public | Graph topology JSON for visualisation |
+| `GET` | `/api/agent/trace/{run_id}` | Public | Full agent trace for a run |
+| `GET` | `/api/agent/pending-reviews` | Admin | HITL runs awaiting review |
+| `POST` | `/api/agent/resume/{thread_id}` | Admin | Resume paused HITL graph |
+| `POST` | `/api/evaluate/multi-agent` | Admin | Trigger multi-agent eval (ARA, ACRR, MRR) |
+
+`ChatRequest` accepts optional `thread_id` (checkpointing) and `mode` (`"multi_agent"` / `"graph"` / `"direct"` to override config per-request).
+
+---
+
+### 2.7 Operational checklist
 
 - Backend deployed, `/health` returns `{"status":"ok"}`.
-- Supabase tables exist and are reachable: `document_chunks`, `documents`, `app_config`, `prompts`, `eval_results`, `eval_dataset`.
+- Supabase tables exist and are reachable: `document_chunks`, `documents`, `app_config`, `prompts`, `eval_results`, `eval_dataset`, `agent_run_traces`.
 - `POST /api/ingest` completes successfully and `GET /api/knowledge` returns non-empty data.
 - Frontend deployed on Vercel with `BACKEND_URL` pointing to the backend.
 - CORS configured correctly on the backend.
-- Admin panel reachable; prompts, settings, and evaluation dataset manager all work:
-  - You can see/edit prompts.
-  - You can edit the evaluation dataset table, upload/download JSONL, and run AI generation.
-  - Evaluations run and visualize successfully on `/admin/eval`.
+- Admin panel reachable:
+  - Knowledge base shows documents and chunk counts.
+  - Settings edits save to Supabase.
+  - Prompts (21 total) are viewable and editable.
+  - RAG evaluation runs and displays LLM scores + retrieval metrics.
+  - Multi-agent evaluation runs and displays ARA, ACRR, per-agent MRR.
+  - Evaluation dataset manager works: edit, upload/download JSONL, AI generate.
