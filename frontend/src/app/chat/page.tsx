@@ -37,6 +37,7 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [jobMode, setJobMode] = useState(false);
+  const [activeAgents, setActiveAgents] = useState<Record<string, string>>({});
   const [jobToolsMap, setJobToolsMap] = useState<Record<string, JobToolCardData[]>>({});
   // Keywords saved after scoring a JD — reused when user asks to "find similar jobs"
   const lastJobKeywordsRef = useRef<string[]>([]);
@@ -244,6 +245,7 @@ export default function ChatPage() {
     setLoading(true);
     setContactState("idle");
     setPendingQuestion("");
+    setActiveAgents({});
 
     if (jobMode) {
       if (isFindJobsIntent(content) && !content.match(/https?:\/\//)) {
@@ -272,6 +274,13 @@ export default function ChatPage() {
       let buffer = "";
 
       const processEvent = (event: Record<string, unknown>, _isFinal: boolean) => {
+        if (event.agent_status) {
+          setActiveAgents((prev) => ({
+            ...prev,
+            [event.agent_status as string]: event.status as string,
+          }));
+          return;
+        }
         if (event.done) {
           const text = ((event.final as string) ?? accumulated).trim() || "No response generated.";
           const sources = (event.sources as SourceItem[]) || [];
@@ -284,6 +293,7 @@ export default function ChatPage() {
             );
           }
           setStreaming(false);
+          setActiveAgents({});
           if (event.no_info) {
             setPendingQuestion(content);
             setContactState("open");
@@ -393,6 +403,7 @@ export default function ChatPage() {
     try { localStorage.removeItem(HISTORY_KEY); } catch {}
     setMessages([]);
     setJobToolsMap({});
+    setActiveAgents({});
     setContactState("idle");
     setPendingQuestion("");
     setContactName("");
@@ -542,7 +553,32 @@ export default function ChatPage() {
             </Fragment>
           ))}
 
-          {loading && <TypingIndicator />}
+          {loading && Object.keys(activeAgents).length > 0 && (
+            <div className="flex flex-wrap gap-2 px-1">
+              {Object.entries(activeAgents).map(([agent, status]) => {
+                const label = agent.replace("_agent", "").replace("_", " ");
+                const isDone = status === "done";
+                return (
+                  <span
+                    key={agent}
+                    className={`inline-flex items-center gap-1.5 border px-2.5 py-1 font-body text-xs uppercase tracking-wider transition-colors ${
+                      isDone
+                        ? "border-[#22c55e]/50 bg-[#22c55e]/10 text-[#22c55e]"
+                        : "border-[var(--primary)]/50 bg-[var(--primary)]/10 text-[var(--primary)]"
+                    }`}
+                  >
+                    {!isDone && (
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                    )}
+                    {isDone && <span>&#10003;</span>}
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {loading && Object.keys(activeAgents).length === 0 && <TypingIndicator />}
 
           {contactState !== "idle" && (
             <div

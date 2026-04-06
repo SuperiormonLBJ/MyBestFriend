@@ -33,6 +33,8 @@ from utils.prompts import (
     PROJECT_AGENT_PROMPT,
     SKILLS_AGENT_PROMPT,
     PERSONAL_AGENT_PROMPT,
+    CALENDAR_AGENT_PROMPT,
+    JOB_PREP_AGENT_PROMPT,
     DOMAIN_SUMMARY_PROMPT,
     SYNTHESIS_AGENT_PROMPT,
     GROUNDING_GUARD_PROMPT,
@@ -118,6 +120,14 @@ _DEFAULTS: dict[str, dict] = {
     "PERSONAL_AGENT_PROMPT": {
         "content": PERSONAL_AGENT_PROMPT,
         "description": "Multi-agent: personal background specialist agent prompt. Placeholder: {context}.",
+    },
+    "CALENDAR_AGENT_PROMPT": {
+        "content": CALENDAR_AGENT_PROMPT,
+        "description": "Multi-agent: calendar availability specialist agent prompt. Uses Google Calendar MCP tools.",
+    },
+    "JOB_PREP_AGENT_PROMPT": {
+        "content": JOB_PREP_AGENT_PROMPT,
+        "description": "Multi-agent: job preparation specialist agent prompt for ReAct tool-calling loop.",
     },
     "DOMAIN_SUMMARY_PROMPT": {
         "content": DOMAIN_SUMMARY_PROMPT,

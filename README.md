@@ -68,25 +68,43 @@ Dedicated multi-agent evaluation tab with orchestration metrics: Agent Routing A
 
 ### 1.2 Multi-agent RAG pipeline (default)
 
-The primary execution mode (`USE_MULTI_AGENT=true`) uses a **LangGraph supervisor + parallel domain specialist graph**:
+The primary execution mode (`USE_MULTI_AGENT=true`) uses a **LangGraph supervisor + parallel ReAct specialist graph**:
 
 ```
 intent_classifier → supervisor → [Send fan-out]
                                   ├─ career_agent    ─┐
-                                  ├─ project_agent   ─┤ (parallel)
-                                  ├─ skills_agent    ─┤
+                                  ├─ project_agent   ─┤
+                                  ├─ skills_agent    ─┤ (parallel ReAct agents)
                                   ├─ personal_agent  ─┤
-                                  └─ job_prep_agent  ─┘
+                                  ├─ job_prep_agent  ─┤
+                                  └─ calendar_agent  ─┘
                                           ↓ [fan-in via operator.add reducers]
-                              grounding_guard → synthesis → hitl_review → trace_log → END
+                              grounding_guard → rerank → synthesis → hitl_review → trace_log → END
 ```
 
-- **`intent_classifier`**: classifies query → decides which specialist agents to activate (structured output via `INTENT_CLASSIFIER_PROMPT`)
-- **`supervisor`**: initialises token budget + run ID, dispatches via `Send` API
-- **Specialist agents**: each calls `search_knowledge_by_domain()` → `rerank_documents()` → `build_agent_result()`
-- **`grounding_guard`**: deduplicates docs, enforces `MULTI_AGENT_TOKEN_BUDGET`, runs self-check
-- **`synthesis`**: generates final answer with multi-source attribution (`SYNTHESIS_AGENT_PROMPT`)
-- **`trace_log`**: fire-and-forget write to `agent_run_traces` Supabase table
+**Key nodes:**
+- **`intent_classifier`**: LLM structured output (`IntentResult`) classifies the query and activates only the relevant agents — a narrow question about one domain activates just one agent instead of all of them.
+- **`supervisor`**: initialises token budget + run ID, dispatches agents via `Send` API.
+- **ReAct specialist agents**: each runs a reason-act-observe loop with a curated tool set. Agents can call multiple tools in sequence (e.g. `list_domain_items("jobs")` then `search_knowledge` for details) and self-terminate when they have enough context.
+- **`grounding_guard`**: merges and deduplicates docs across all agent branches, enforces `MULTI_AGENT_TOKEN_BUDGET`.
+- **`rerank`**: single LLM rerank on the final merged, budget-trimmed doc set.
+- **`synthesis`**: generates final answer with multi-source attribution (`SYNTHESIS_AGENT_PROMPT`), streams tokens via SSE.
+- **`trace_log`**: fire-and-forget write to `agent_run_traces` Supabase table.
+
+#### Skill-based agent definitions (`agent_skills.py`)
+
+Each agent is declared as an `AgentSkill` — a data-only record of its prompt key, tool whitelist, tool defaults, iteration limit, and optional MCP server filter. Adding a new domain agent requires only a new entry in `AGENT_SKILLS`, no graph code changes.
+
+| Agent | Tools | Max iterations | MCP filter |
+|---|---|---|---|
+| `career_agent` | `search_knowledge`, `get_time_period_summary`, `list_domain_items` | 3 | — |
+| `project_agent` | `search_knowledge`, `list_domain_items`, `get_knowledge_scope` | 3 | — |
+| `skills_agent` | `search_knowledge`, `list_domain_items` | 3 | — |
+| `personal_agent` | `search_knowledge`, `get_time_period_summary` | 2 | — |
+| `job_prep_agent` | `search_knowledge`, `fetch_job_description`, `score_job_fit`, `extract_job_fit_signals`, `search_recent_jobs` | 4 | — |
+| `calendar_agent` | *(external only)* | 4 | `google-calendar` |
+
+Tool access is **scoped** — `career_agent` cannot call `search_recent_jobs`, `calendar_agent` cannot call knowledge-base tools. `mcp_server_filter` limits each agent to specific external MCP servers.
 
 **Fallback modes** (configured via flags):
 - `USE_GRAPH=true` → `conversation_graph.py` (legacy 6-node LangGraph)
@@ -105,20 +123,28 @@ intent_classifier → supervisor → [Send fan-out]
 - **Tailored output**: `POST /api/job/cover-letter` and `POST /api/job/prepare` generate cover letter, resume improvement suggestions, and interview questions using RAG context + structured JD analysis.
 - **Job-prep UI**: Shows job analysis (requirements, culture bullets, keyword tags) before the generated cover letter.
 
-### 1.5 MCP server
+### 1.5 Unified tool registry (`tool_registry.py`)
 
-Exposes the knowledge base as 6 tools for Claude Desktop and any MCP-compatible LLM client:
+All tool implementations live in a single registry as LangChain `@tool` functions. This is the **single source of truth** shared by three consumers — ReAct agents, the MCP server, and direct API endpoints — eliminating duplication.
 
-| Tool | Description |
-|------|-------------|
-| `search_knowledge` | Primary knowledge retrieval (hybrid search + rerank) |
-| `get_time_period_summary` | All chunks for a given year |
-| `list_domain_items` | Titles + years by domain |
-| `get_knowledge_scope` | Doc type counts + year range |
-| `generate_structured_bio` | Bio in professional/casual/conference style |
-| `extract_job_fit_signals` | Job description analysis against knowledge base |
+| Tool | Wraps | Used by |
+|------|-------|---------|
+| `search_knowledge` | `fetch_context` + `rerank_documents` | All knowledge agents, MCP |
+| `get_time_period_summary` | `twin_tools.summarize_time_period` | `career_agent`, `personal_agent`, MCP |
+| `list_domain_items` | `twin_tools.list_domain_items` | `career_agent`, `project_agent`, `skills_agent`, MCP |
+| `get_knowledge_scope` | `twin_tools.get_knowledge_scope` | `project_agent`, MCP |
+| `generate_structured_bio` | `twin_tools.generate_bio` + retrieval | MCP |
+| `extract_job_fit_signals` | `extract_job_requirements` + `get_job_context` | `job_prep_agent`, MCP |
+| `fetch_job_description` | `agent_tools.scrape_job_description` | `job_prep_agent`, MCP |
+| `score_job_fit` | `agent_tools.score_job_fit` | `job_prep_agent`, MCP |
+| `search_recent_jobs` | `agent_tools.search_recent_jobs` | `job_prep_agent`, MCP |
 
-Run with:
+### 1.6 MCP server (outbound) + MCP client (inbound)
+
+#### Outbound — expose the twin as MCP tools
+
+`mcp_server.py` imports directly from `tool_registry.py` and auto-generates MCP tool schemas from the LangChain `@tool` definitions. Run in stdio mode for Claude Desktop or any MCP-compatible client:
+
 ```bash
 uv run python -m src.mcp_server
 ```
@@ -135,18 +161,38 @@ Register with Claude Desktop:
 }
 ```
 
-### 1.6 Knowledge management & admin UI
+#### Inbound — consume external MCP servers inside agents
+
+`mcp_client.py` connects to external MCP servers defined in `config.yaml` under `mcp_clients` and wraps their tools as LangChain tools for use inside ReAct agents. Each agent controls which servers it may access via `mcp_server_filter` in its `AgentSkill` definition.
+
+**Example — Google Calendar integration:**
+
+```yaml
+# config.yaml
+mcp_clients:
+  - name: "google-calendar"
+    command: "npx"
+    args: ["-y", "@anthropic-community/mcp-server-google-calendar"]
+    env:
+      GOOGLE_CLIENT_ID: "your-client-id"
+      GOOGLE_CLIENT_SECRET: "your-client-secret"
+      GOOGLE_REFRESH_TOKEN: "your-refresh-token"
+```
+
+With this configured, queries like *"Is Beiji free on Friday afternoon?"* trigger `calendar_agent`, which calls the Google Calendar MCP tools (`list_events`, `get_freebusy`, etc.) and feeds the results into synthesis alongside knowledge-base context.
+
+### 1.7 Knowledge management & admin UI
 
 Admin panel (Next.js) with optional access control via `ADMIN_API_KEY`:
 
 - **Knowledge base view**: Tree of ingested documents with chunk counts by category (CV, career, personal, project). Re-ingest all with one click.
 - **Document operations**: Add markdown via admin UI → `/api/documents` (write, chunk, embed, sync to Supabase). Delete → disk, vector store, and Supabase kept in sync.
 - **Config management**: `/api/config` — view effective runtime config; edit identity, notifications, and AI models from the Settings page.
-- **Prompt management**: All 21 system prompts stored in Supabase `prompts` table, editable from the Prompts admin screen. Includes agent-specific prompts (`CAREER_AGENT_PROMPT`, `GROUNDING_GUARD_PROMPT`, `SYNTHESIS_AGENT_PROMPT`, etc.).
+- **Prompt management**: All system prompts stored in Supabase `prompts` table, editable from the Prompts admin screen. Includes all agent-specific prompts (`CAREER_AGENT_PROMPT`, `PROJECT_AGENT_PROMPT`, `SKILLS_AGENT_PROMPT`, `PERSONAL_AGENT_PROMPT`, `JOB_PREP_AGENT_PROMPT`, `CALENDAR_AGENT_PROMPT`, `SYNTHESIS_AGENT_PROMPT`, `INTENT_CLASSIFIER_PROMPT`, etc.).
 
-### 1.7 Evaluation & dataset management
+### 1.8 Evaluation & dataset management
 
-#### 1.7.1 RAG evaluation
+#### 1.8.1 RAG evaluation
 
 - `POST /api/evaluate` — async RAGAS evaluation over the test set:
   - LLM answer quality: accuracy, relevance, completeness, confidence, overall score (3.9/5 on last run).
@@ -154,7 +200,7 @@ Admin panel (Next.js) with optional access control via `ADMIN_API_KEY`:
 - `GET /api/evaluate/{job_id}` — poll job status.
 - `GET /api/evaluate/latest` — fetch last completed result from Supabase.
 
-#### 1.7.2 Multi-agent evaluation
+#### 1.8.2 Multi-agent evaluation
 
 - `POST /api/evaluate/multi-agent` — 5 new metrics:
   - **ARA** (Agent Routing Accuracy): fraction of queries routed to correct specialists.
@@ -163,35 +209,62 @@ Admin panel (Next.js) with optional access control via `ADMIN_API_KEY`:
   - **Parallel Efficiency**: speedup vs sequential execution.
   - **Per-Agent MRR**: retrieval rank quality per specialist (career, skills, project, personal, job-prep).
 
-#### 1.7.3 Evaluation dataset manager
+#### 1.8.3 Evaluation dataset manager
 
 - Supabase-backed `eval_dataset` table (per-owner): `question`, `ground_truth`, `category`, `keywords`.
 - Admin UI dataset tab: inline editing, add/delete rows, upload JSONL, download JSONL, AI-generate test cases via `/api/eval/dataset/generate`.
 - `load_test_questions()` seeds from `backend/evaluation/eval_data.jsonl` if the Supabase table is empty.
 
-### 1.8 Human-in-the-loop (HITL)
+### 1.9 Human-in-the-loop (HITL)
 
 Set `HITL_ENABLED=true` + build graph with checkpointing. Interrupted runs pause at the `hitl_review` node. Resume via `POST /api/agent/resume/{thread_id}`. Pending reviews listed at `GET /api/agent/pending-reviews`.
 
-### 1.9 User contact & handoff
+### 1.10 User contact & handoff
 
 When `no_info` is true from `/api/chat`:
 - Frontend shows a contact form (name, email, question).
 - `POST /api/contact` sends email to owner via SMTP.
 
-### 1.10 Tech stack
+### 1.11 Tech stack
 
 - **Backend**: Python 3.12, FastAPI, Uvicorn, LangChain, LangGraph, Supabase vector store, RAGAS evaluation.
 - **Frontend**: Next.js (App Router), React 19, Tailwind CSS v4, Lucide icons.
 - **Storage & infra**: Supabase Postgres (documents, chunks, eval datasets, prompts, config, agent traces); Vercel for frontend; Railway/Render/Fly.io/Docker for backend.
+- **MCP**: mcp Python SDK (outbound server + inbound client); stdio transport for Claude Desktop and external MCP servers.
 
 ---
 
-## 2. Deployment
+## 2. Architecture improvements over single-agent RAG
+
+The previous system was a single-graph linear pipeline: one retrieval call, one generation call, no specialisation.
+
+| Concern | Old (direct RAG) | New (ReAct multi-agent) |
+|---|---|---|
+| **Retrieval scope** | One `search_knowledge` call with the raw query | Each specialist filters by domain; `career_agent` searches only career docs, `skills_agent` searches skills, etc. |
+| **Routing** | None — every query goes through the same path | LLM intent classifier activates only the relevant agents; narrow questions hit one agent instead of all |
+| **Tool calling** | None — retrieval was hard-coded | Every agent runs a ReAct loop and can call any tool in its whitelist across multiple steps |
+| **External integrations** | MCP server was outbound only; internal agents had no access | `mcp_client.py` lets any agent consume external MCP servers (Google Calendar, etc.) via `mcp_server_filter` |
+| **Duplication** | `mcp_server.py` had its own hand-written implementations of tools also defined in `rag_retrieval.py` | `tool_registry.py` is the single source of truth; MCP server, agents, and API routes all import from it |
+| **Streaming feedback** | Users saw a spinner until the full answer appeared | `agent_status` SSE events let the UI show a live per-agent progress indicator as each one runs |
+| **Adding a new domain** | Required editing the retrieval query and synthesis prompt | Add one `AgentSkill` entry in `agent_skills.py`, one node wire-up in `multi_agent_graph.py` |
+| **Calendar / real-time data** | Not possible | `calendar_agent` queries Google Calendar MCP and merges results into synthesis |
+
+**Common multi-agent problems addressed:**
+
+- **Fan-out / fan-in state corruption** — `Annotated[list, operator.add]` reducers on `agent_results` and `agent_trace` merge parallel branches without race conditions.
+- **Token budget explosion** — `grounding_guard` deduplicates and trims the merged doc set to `MULTI_AGENT_TOKEN_BUDGET` before synthesis.
+- **Unreliable routing** — replaced regex heuristics with LLM structured output (`IntentResult`); classifier emits confidence and entity hints alongside the agent list.
+- **Tool scope creep** — each agent only receives the tools listed in its `AgentSkill.tools` whitelist; external MCP tools are additionally gated by `mcp_server_filter`.
+- **Dead-loop prevention** — each ReAct agent has a `max_iterations` cap in its `AgentSkill`; the loop exits early if the model stops issuing tool calls.
+- **Observability** — every run writes a structured trace (agents activated, per-agent latency, token budget used) to the `agent_run_traces` Supabase table.
+
+---
+
+## 3. Deployment
 
 For provider-specific details, see `DEPLOYMENT.md`. This section covers the overall flow.
 
-### 2.1 Local development
+### 3.1 Local development
 
 1. **Backend: install dependencies**
 
@@ -247,7 +320,7 @@ For provider-specific details, see `DEPLOYMENT.md`. This section covers the over
 
 ---
 
-### 2.2 Backend deployment (Railway / Render / Fly.io / Docker)
+### 3.2 Backend deployment (Railway / Render / Fly.io / Docker)
 
 1. Set deployment working directory to `backend/`.
 2. Install: `uv sync` (or `pip install -r requirements.txt` for Railway).
@@ -260,7 +333,7 @@ For provider-specific details, see `DEPLOYMENT.md`. This section covers the over
 
 ---
 
-### 2.3 Frontend deployment (Vercel)
+### 3.3 Frontend deployment (Vercel)
 
 1. Import the Git repo in Vercel, set project root to `frontend/`, framework preset: **Next.js**.
 2. Set `NEXT_PUBLIC_BACKEND_URL` (or `BACKEND_URL`) to your backend base URL (no trailing slash).
@@ -268,11 +341,11 @@ For provider-specific details, see `DEPLOYMENT.md`. This section covers the over
 
 ---
 
-### 2.4 Supabase setup
+### 3.4 Supabase setup
 
 Use the Supabase SQL editor to create the core tables.
 
-#### 2.4.1 Vector store, documents, config, prompts, eval results
+#### 3.4.1 Vector store, documents, config, prompts, eval results
 
 ```sql
 -- Vector chunks used by SupabaseVectorStore
@@ -315,7 +388,7 @@ create table if not exists public.eval_results (
 );
 ```
 
-#### 2.4.2 Evaluation dataset table
+#### 3.4.2 Evaluation dataset table
 
 ```sql
 create table if not exists public.eval_dataset (
@@ -333,7 +406,7 @@ create index if not exists idx_eval_dataset_owner_id
   on public.eval_dataset (owner_id);
 ```
 
-#### 2.4.3 Agent run traces table
+#### 3.4.3 Agent run traces table
 
 ```sql
 create table if not exists public.agent_run_traces (
@@ -353,13 +426,14 @@ create index if not exists idx_agent_run_traces_run_id
 
 ---
 
-### 2.5 Key config flags
+### 3.5 Key config flags
 
 | Flag | Default | Purpose |
 |------|---------|---------|
-| `USE_MULTI_AGENT` | `true` | Enable supervisor + specialist agent graph |
+| `USE_MULTI_AGENT` | `true` | Enable supervisor + ReAct specialist agent graph |
 | `USE_GRAPH` | `false` | Enable legacy 6-node LangGraph (fallback) |
 | `MULTI_AGENT_TOKEN_BUDGET` | `12000` | Max context tokens across all agents |
+| `MULTI_AGENT_PARALLEL` | `true` | Run agents in parallel via LangGraph Send API |
 | `MULTI_AGENT_LOG_TRACES` | `true` | Write traces to `agent_run_traces` table |
 | `HYBRID_SEARCH_ENABLED` | `true` | Semantic + lexical search |
 | `LEXICAL_WEIGHT` | `0.3` | Weight for lexical component in hybrid search |
@@ -371,7 +445,7 @@ create index if not exists idx_agent_run_traces_run_id
 
 ---
 
-### 2.6 New API endpoints (multi-agent)
+### 3.6 New API endpoints (multi-agent)
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
@@ -385,7 +459,7 @@ create index if not exists idx_agent_run_traces_run_id
 
 ---
 
-### 2.7 Operational checklist
+### 3.7 Operational checklist
 
 - Backend deployed, `/health` returns `{"status":"ok"}`.
 - Supabase tables exist and are reachable: `document_chunks`, `documents`, `app_config`, `prompts`, `eval_results`, `eval_dataset`, `agent_run_traces`.

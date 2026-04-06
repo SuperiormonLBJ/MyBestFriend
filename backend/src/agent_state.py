@@ -26,6 +26,13 @@ class AgentResult(TypedDict):
     confidence: float        # 0.0–1.0, weighted by reranker position
 
 
+class IntentEntities(BaseModel):
+    """Extracted entities from the user's query."""
+    year: str = Field(default="", description="4-digit year if mentioned, else empty string")
+    doc_type: str = Field(default="", description="Document type hint if clear, else empty string")
+    job_context: bool = Field(default=False, description="True if the query involves a job description or application")
+
+
 class IntentResult(BaseModel):
     """Structured LLM output from the intent classifier node."""
     primary_domain: str = Field(
@@ -34,9 +41,9 @@ class IntentResult(BaseModel):
     requires_agents: list[str] = Field(
         description="List of agent names to activate, e.g. ['career_agent', 'project_agent']"
     )
-    entities: dict = Field(
-        default_factory=dict,
-        description="Extracted entities: year (str), doc_type (str), job_context (bool)",
+    entities: IntentEntities = Field(
+        default_factory=IntentEntities,
+        description="Extracted entities from the query",
     )
     confidence: float = Field(
         description="Classifier confidence 0.0–1.0",
@@ -77,7 +84,7 @@ class MultiAgentState(TypedDict):
     # Job mode — set by the frontend toggle, gates job_prep_agent activation
     job_mode: bool              # True = user explicitly selected Job Mode
 
-    # Job URL scraping (populated by fast_router when a job URL is detected)
+    # Job URL scraping (populated by intent_classifier when a job URL is detected)
     job_url: str                # original URL from the user's query
     scraped_job_text: str       # full JD text scraped from the URL
 

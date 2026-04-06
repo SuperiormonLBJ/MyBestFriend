@@ -2,13 +2,14 @@
 Multi-agent conversation graph for MyBestFriend.
 
 Activated when USE_MULTI_AGENT=true in config. Implements:
-  fast_router → supervisor → [parallel domain agents: A+B+C] → grounding_guard → rerank → synthesis → trace_log
+  intent_classifier → supervisor → [parallel ReAct agents] → grounding_guard → rerank → synthesis → trace_log
 
 Key design principles:
-- Strict DAG: supervisor dispatches once, no backward edges, no cycles.
+- LLM-based intent classification with structured output (IntentResult).
+- ReAct agents: each specialist has a tool-calling loop with scoped tools from tool_registry.
 - Parallel execution via LangGraph Send API (fan-out) + Annotated[list, operator.add] (fan-in).
 - Only the synthesis node streams tokens; all other nodes run synchronously before streaming begins.
-- All existing rag_retrieval.py functions are reused unchanged.
+- Agent progress events emitted via token_queue for frontend display.
 - Feature-flagged: USE_MULTI_AGENT=false (default) falls back to existing run_graph() / generate_answer().
 
 Usage from api_server.py:
@@ -33,7 +34,7 @@ from langchain_openai import ChatOpenAI
 
 from utils.config_loader import ConfigLoader
 from utils.prompt_manager import get_prompt
-from src.agent_state import MultiAgentState, AgentResult, build_initial_multi_agent_state
+from src.agent_state import MultiAgentState, AgentResult, IntentResult, build_initial_multi_agent_state
 from src.agent_tools import (
     expand_query_for_domain,
     generate_domain_summary,
@@ -59,37 +60,25 @@ SPECIALIST_AGENT_NAMES = [
     "skills_agent",
     "personal_agent",
     "job_prep_agent",
+    "calendar_agent",
 ]
 
 
 # ---------------------------------------------------------------------------
-# Node: Fast Router (replaces LLM intent classifier)
+# Node: Intent Classifier (LLM-based structured output)
 # ---------------------------------------------------------------------------
 
-# Maps doc_type from extract_query_intent → agent names to activate
-_DOMAIN_AGENT_MAP: dict[str | None, list[str]] = {
-    "career":   ["career_agent"],
-    "project":  ["project_agent"],
-    "cv":       ["skills_agent"],
-    "personal": ["personal_agent"],
-    None:       ["career_agent", "project_agent", "skills_agent", "personal_agent"],
-}
-
-
-def _fast_router_node(state: MultiAgentState) -> MultiAgentState:
+def _intent_classifier_node(state: MultiAgentState) -> MultiAgentState:
     """
-    Lightweight routing node — no LLM call.
+    LLM-based intent classification using structured output.
 
-    Uses the existing regex-based extract_query_intent() to classify the query
-    into a domain, then maps it to the appropriate agent(s). For general/unknown
-    queries all four core agents are activated.
-
-    Also rewrites the query (1 LLM call). Each specialist agent then expands
-    the rewritten query with domain-specific terms before calling fetch_context().
+    Classifies the user query into domains, decides which agents to activate,
+    extracts entities (year, doc_type, job_context), and provides confidence.
+    Also rewrites the query and handles job URL scraping.
     """
-    from src.rag_retrieval import extract_query_intent, rewrite_query
+    from src.rag_retrieval import rewrite_query
 
-    print(f"[fast_router] query: {state['query']!r}")
+    print(f"[intent_classifier] query: {state['query']!r}")
     if is_loop_detected(state):
         state["no_info"] = True
         return state
@@ -98,35 +87,60 @@ def _fast_router_node(state: MultiAgentState) -> MultiAgentState:
     if state.get("job_mode"):
         job_url = extract_job_url(state["query"])
         if job_url:
-            print(f"[fast_router] job_mode + URL detected: {job_url} — scraping...")
+            print(f"[intent_classifier] job_mode + URL detected: {job_url} — scraping...")
             scraped = scrape_job_description(job_url)
             if scraped:
                 state["job_url"] = job_url
                 state["scraped_job_text"] = scraped
-                print(f"[fast_router] scraped {len(scraped)} chars from {job_url}")
+                print(f"[intent_classifier] scraped {len(scraped)} chars from {job_url}")
             else:
-                print(f"[fast_router] scrape returned empty (login-gated or failed)")
+                print(f"[intent_classifier] scrape returned empty (login-gated or failed)")
 
     rewritten = rewrite_query(state["query"], state["history"])
     state["rewritten_query"] = rewritten
-    print(f"[fast_router] rewritten: {rewritten!r}")
+    print(f"[intent_classifier] rewritten: {rewritten!r}")
 
-    intent = extract_query_intent(state["query"])
-    doc_type = intent.get("doc_type")  # str or None
-    agents = list(_DOMAIN_AGENT_MAP.get(doc_type, _DOMAIN_AGENT_MAP[None]))
+    # LLM structured classification
+    try:
+        prompt = get_prompt("INTENT_CLASSIFIER_PROMPT").format(query=state["query"])
+        llm = ChatOpenAI(model=config.get_rewrite_model(), temperature=0)
+        intent_result = llm.with_structured_output(IntentResult).invoke([
+            SystemMessage(content=prompt),
+        ])
 
-    # Activate job_prep_agent ONLY when the user explicitly toggled Job Mode
-    if state.get("job_mode") and "job_prep_agent" not in agents:
-        agents.append("job_prep_agent")
-        doc_type = "job_prep"
+        agents = intent_result.requires_agents
+        # Validate agent names
+        agents = [a for a in agents if a in SPECIALIST_AGENT_NAMES]
+        if not agents:
+            agents = ["career_agent", "project_agent", "skills_agent", "personal_agent"]
 
-    state["intent"] = {
-        "primary_domain": doc_type or "general",
-        "requires_agents": agents,
-        "entities": {"year": intent.get("year")},
-        "confidence": 1.0,  # deterministic regex — always 1.0
-    }
-    print(f"[fast_router] domain={doc_type!r} agents={agents}")
+        state["intent"] = intent_result.model_dump()
+        state["intent"]["requires_agents"] = agents
+    except Exception as e:
+        print(f"[intent_classifier] LLM classification failed, falling back to regex: {e}")
+        from src.rag_retrieval import extract_query_intent
+        _DOMAIN_AGENT_MAP = {
+            "career": ["career_agent"],
+            "project": ["project_agent"],
+            "cv": ["skills_agent"],
+            "personal": ["personal_agent"],
+            None: ["career_agent", "project_agent", "skills_agent", "personal_agent"],
+        }
+        regex_intent = extract_query_intent(state["query"])
+        doc_type = regex_intent.get("doc_type")
+        agents = list(_DOMAIN_AGENT_MAP.get(doc_type, _DOMAIN_AGENT_MAP[None]))
+        state["intent"] = {
+            "primary_domain": doc_type or "general",
+            "requires_agents": agents,
+            "entities": {"year": regex_intent.get("year", ""), "doc_type": "", "job_context": False},
+            "confidence": 1.0,
+        }
+
+    # Activate job_prep_agent when the user explicitly toggled Job Mode
+    if state.get("job_mode") and "job_prep_agent" not in state["intent"]["requires_agents"]:
+        state["intent"]["requires_agents"].append("job_prep_agent")
+
+    print(f"[intent_classifier] agents={state['intent']['requires_agents']} confidence={state['intent'].get('confidence', 0)}")
     return state
 
 
@@ -138,21 +152,18 @@ def _route_to_agents(state: MultiAgentState):
     """
     Conditional edge function: returns list[Send] for parallel execution
     or routes directly to grounding_guard if no agents are needed.
+    Sequential mode also uses Send to ensure all agents run.
     """
     requires_agents = state.get("intent", {}).get("requires_agents", [])
     valid_agents = [a for a in requires_agents if a in SPECIALIST_AGENT_NAMES]
 
     if not valid_agents:
-        # No agents to run — skip directly to grounding guard
         return "grounding_guard"
 
-    if config.get_multi_agent_parallel():
-        # Fan-out: dispatch each agent concurrently via Send
-        return [Send(agent_name, state) for agent_name in valid_agents]
-    else:
-        # Sequential: set active_agents and let supervisor handle routing
-        state["active_agents"] = valid_agents
-        return valid_agents[0] if valid_agents else "grounding_guard"
+    # Both parallel and sequential modes use Send for dispatch.
+    # LangGraph handles ordering: parallel runs concurrently, sequential
+    # can be achieved by the caller, but all agents must run.
+    return [Send(agent_name, state) for agent_name in valid_agents]
 
 
 def _supervisor_node(state: MultiAgentState) -> MultiAgentState:
@@ -179,75 +190,165 @@ def _supervisor_node(state: MultiAgentState) -> MultiAgentState:
 
 
 # ---------------------------------------------------------------------------
-# Specialist agent factory  (Options A + B + C)
+# ReAct agent factory — tool-using agents with reasoning loops
 # ---------------------------------------------------------------------------
 
-def _make_specialist_agent(agent_name: str) -> Callable[[MultiAgentState], MultiAgentState]:
+from src.agent_skills import AGENT_SKILLS
+from src.tool_registry import get_tools_by_names
+
+
+def _get_agent_tools(skill):
+    """Get tools for an agent: built-in registry tools + filtered external MCP tools.
+
+    mcp_server_filter controls which external servers this agent may use:
+      []      — no external tools (default for knowledge-only agents)
+      ["*"]   — all configured external servers
+      ["foo"] — only the server named "foo" in config.yaml mcp_clients
     """
-    Returns a node function for a domain specialist agent.
+    tools = get_tools_by_names(skill.tools)
+    if not skill.mcp_server_filter:
+        return tools
+    try:
+        from src.mcp_client import load_external_tools_by_server
+        external = load_external_tools_by_server(skill.mcp_server_filter)
+        if external:
+            tools = tools + external
+    except Exception as e:
+        print(f"[agent_tools] failed to load external tools for filter {skill.mcp_server_filter}: {e}")
+    return tools
 
-    Each agent runs three steps in sequence (all fast, called in parallel across agents):
 
-    A) Domain query expansion (template, no LLM):
-       Appends domain-specific terms to the rewritten query so each agent retrieves
-       a diverse, focused candidate set rather than all hitting the same generic query.
+def _make_react_agent(agent_name: str) -> Callable[[MultiAgentState], dict]:
+    """
+    Build a ReAct agent node from its skill definition.
 
-    B) Targeted fetch_context() + mini-summary (1 cheap LLM call per agent):
-       Calls fetch_context() with the domain-expanded query, then generates a 2-3
-       sentence domain summary. Because agents run in parallel via LangGraph Send,
-       wall-clock cost = max(agent_latency), not sum — same as a single LLM call.
-
-    C*) job_prep_agent only: detects job-description context, extracts requirements
-       via extract_job_requirements(), and searches with those keywords for targeted
-       fit-signal retrieval instead of the generic domain-suffix expansion.
+    Each agent runs a reason-act-observe loop:
+    1. LLM decides which tool to call (or to stop)
+    2. Tool executes and returns observations
+    3. LLM reasons about the result and decides next action
+    4. Repeat until max_iterations or the LLM stops calling tools
 
     Wrapped in try/except so a single agent failure never kills the whole graph.
+    Emits agent_status progress events via the thread-local token_queue when streaming.
     """
-    is_job_prep = agent_name == "job_prep_agent"
+    skill = AGENT_SKILLS[agent_name]
+    agent_tools = _get_agent_tools(skill)
 
     def _agent_node(state: MultiAgentState) -> dict:
         if is_loop_detected(state):
             return {"agent_results": [], "agent_trace": [], "agent_errors": []}
 
         t0 = time.time()
-        top_k = config.get_top_k()
         query = state.get("rewritten_query") or state["query"]
         original_query = state["query"]
 
-        try:
-            if is_job_prep:
-                # Option C: job-description-aware retrieval
-                # Prefer scraped text from URL over raw query text
-                docs, _fit_note = retrieve_job_prep_docs(
-                    original_query,
-                    top_k=top_k,
-                    scraped_job_text=state.get("scraped_job_text", ""),
-                )
-            else:
-                # Option A: domain-expanded query → targeted fetch_context
-                from src.rag_retrieval import fetch_context, deduplicate_context
-                domain_query = expand_query_for_domain(query, agent_name)
-                docs = fetch_context(domain_query)
-                # Also fetch with original rewritten query and merge for coverage
-                if domain_query != query:
-                    docs = deduplicate_context(docs + fetch_context(query))
-                docs = docs[:top_k * 3]
+        # Emit progress event if streaming
+        token_queue = getattr(_tl, "token_queue", None)
+        if token_queue:
+            token_queue.put({"agent_status": agent_name, "status": "started"})
 
-            # Option B: generate mini-summary in parallel with other agents
-            # For job_prep, enrich the summary query with scraped JD text if available
-            summary_query = original_query
-            if is_job_prep and state.get("scraped_job_text"):
-                summary_query = state["scraped_job_text"][:1500]
-            summary = generate_domain_summary(summary_query, agent_name, docs[:top_k])
-            result = build_agent_result(agent_name, docs[:top_k * 2], summary=summary)
+        try:
+            system_prompt = get_prompt(skill.prompt_key)
+
+            # For job_prep, inject scraped JD into the query context
+            effective_query = original_query
+            if agent_name == "job_prep_agent" and state.get("scraped_job_text"):
+                effective_query = (
+                    f"Job description:\n{state['scraped_job_text'][:2000]}\n\n"
+                    f"User question: {original_query}"
+                )
+
+            llm = ChatOpenAI(model=config.get_rewrite_model(), temperature=0)
+            llm_with_tools = llm.bind_tools(agent_tools)
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"User query: {effective_query}\nRewritten query: {query}"),
+            ]
+
+            all_tool_results = []
+            iterations = 0
+
+            for i in range(skill.max_iterations):
+                iterations = i + 1
+                response = llm_with_tools.invoke(messages)
+                messages.append(response)
+
+                if not response.tool_calls:
+                    break
+
+                if token_queue:
+                    token_queue.put({"agent_status": agent_name, "status": "tool_calling", "iteration": i + 1})
+
+                from langchain_core.messages import ToolMessage
+                for tc in response.tool_calls:
+                    # Apply tool defaults from skill definition
+                    tool_args = dict(tc["args"])
+                    if tc["name"] in skill.tool_defaults:
+                        for k, v in skill.tool_defaults[tc["name"]].items():
+                            if k not in tool_args or not tool_args[k]:
+                                tool_args[k] = v
+
+                    # Execute the tool
+                    tool_fn = next((t for t in agent_tools if t.name == tc["name"]), None)
+                    if tool_fn:
+                        try:
+                            tool_result = tool_fn.invoke(tool_args)
+                        except Exception as te:
+                            tool_result = f"Tool error: {te}"
+                    else:
+                        tool_result = f"Unknown tool: {tc['name']}"
+
+                    tool_result_str = str(tool_result)
+                    messages.append(ToolMessage(content=tool_result_str, tool_call_id=tc["id"]))
+                    all_tool_results.append({"tool": tc["name"], "args": tool_args, "result": tool_result_str})
+
+            # Extract the final summary from the last assistant message
+            summary = ""
+            for msg in reversed(messages):
+                if hasattr(msg, "content") and msg.content and not hasattr(msg, "tool_call_id"):
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        continue
+                    summary = msg.content
+                    break
+
+            # Collect docs from search_knowledge tool results
+            import json as _json
+            docs = []
+            from langchain_core.documents import Document
+            for tr in all_tool_results:
+                if tr["tool"] == "search_knowledge":
+                    try:
+                        parsed = _json.loads(tr["result"])
+                        for r in parsed.get("results", []):
+                            docs.append(Document(
+                                page_content=r.get("content", ""),
+                                metadata={
+                                    "source": r.get("source", ""),
+                                    "doc_type": r.get("doc_type", ""),
+                                    "year": r.get("year", ""),
+                                    "section": r.get("section", ""),
+                                    "title": r.get("title", ""),
+                                },
+                            ))
+                    except (_json.JSONDecodeError, KeyError):
+                        pass
+
+            result = build_agent_result(agent_name, docs, summary=summary)
             errors = []
+
         except Exception as e:
             print(f"[{agent_name}] Agent error: {e}")
             result = build_agent_result(agent_name, [], error=str(e))
             errors = [agent_name]
+            iterations = 0
 
         latency_ms = int((time.time() - t0) * 1000)
-        print(f"[{agent_name}] {len(result.get('docs', []))} docs, summary={bool(result.get('summary'))} in {latency_ms}ms")
+        print(f"[{agent_name}] {len(result.get('docs', []))} docs, iterations={iterations}, summary={bool(result.get('summary'))} in {latency_ms}ms")
+
+        if token_queue:
+            token_queue.put({"agent_status": agent_name, "status": "done", "latency_ms": latency_ms})
+
         return {
             "agent_results": [result],
             "agent_trace": [{
@@ -256,6 +357,7 @@ def _make_specialist_agent(agent_name: str) -> Callable[[MultiAgentState], Multi
                 "doc_count": len(result.get("docs", [])),
                 "confidence": result.get("confidence", 0.0),
                 "error": result.get("error"),
+                "iterations": iterations,
             }],
             "agent_errors": errors,
         }
@@ -264,11 +366,12 @@ def _make_specialist_agent(agent_name: str) -> Callable[[MultiAgentState], Multi
     return _agent_node
 
 
-career_agent = _make_specialist_agent("career_agent")
-project_agent = _make_specialist_agent("project_agent")
-skills_agent = _make_specialist_agent("skills_agent")
-personal_agent = _make_specialist_agent("personal_agent")
-job_prep_agent = _make_specialist_agent("job_prep_agent")
+career_agent = _make_react_agent("career_agent")
+project_agent = _make_react_agent("project_agent")
+skills_agent = _make_react_agent("skills_agent")
+personal_agent = _make_react_agent("personal_agent")
+job_prep_agent = _make_react_agent("job_prep_agent")
+calendar_agent = _make_react_agent("calendar_agent")
 
 
 # ---------------------------------------------------------------------------
@@ -603,24 +706,25 @@ def build_multi_agent_graph(use_checkpointing: bool = False):
     """
     Build and compile the full multi-agent StateGraph.
 
-    Graph topology (A+B+C pattern):
-        fast_router → supervisor →[Send fan-out]→ [specialist agents: domain fetch + summary]
-                                                → grounding_guard → rerank → synthesis
-                                                → [hitl] → trace_log → END
+    Graph topology:
+        intent_classifier → supervisor →[Send fan-out]→ [ReAct agents with tool-calling]
+                                                       → grounding_guard → rerank → synthesis
+                                                       → [hitl] → trace_log → END
 
-    LLM calls per request: rewrite (fast_router) + N×mini-summary (parallel) + rerank + synthesis
-    Wall-clock: rewrite + max(agent_latency) + rerank + synthesis — same serial depth as direct mode.
+    LLM calls per request: intent classification + rewrite + N×(tool-calling loops) + rerank + synthesis
+    Wall-clock: classification + rewrite + max(agent_latency) + rerank + synthesis.
     """
     graph = StateGraph(MultiAgentState)
 
     # Register all nodes
-    graph.add_node("fast_router", _fast_router_node)
+    graph.add_node("intent_classifier", _intent_classifier_node)
     graph.add_node("supervisor", _supervisor_node)
     graph.add_node("career_agent", career_agent)
     graph.add_node("project_agent", project_agent)
     graph.add_node("skills_agent", skills_agent)
     graph.add_node("personal_agent", personal_agent)
     graph.add_node("job_prep_agent", job_prep_agent)
+    graph.add_node("calendar_agent", calendar_agent)
     graph.add_node("grounding_guard", _grounding_guard_node)
     graph.add_node("rerank", _rerank_node)
     graph.add_node("synthesis", _synthesis_node)
@@ -628,9 +732,9 @@ def build_multi_agent_graph(use_checkpointing: bool = False):
     graph.add_node("trace_log", _trace_log_node)
     graph.add_node("notification_agent", _notification_agent_node)
 
-    # Entry: fast_router → supervisor
-    graph.set_entry_point("fast_router")
-    graph.add_edge("fast_router", "supervisor")
+    # Entry: intent_classifier → supervisor
+    graph.set_entry_point("intent_classifier")
+    graph.add_edge("intent_classifier", "supervisor")
 
     # Fan-out: supervisor → parallel scorers via Send, or directly to grounding_guard
     graph.add_conditional_edges(
@@ -683,13 +787,14 @@ def _build_streaming_graph() -> object:
     Each call sets _tl.token_queue before invoking the graph (see run_multi_agent_graph_stream).
     """
     graph = StateGraph(MultiAgentState)
-    graph.add_node("fast_router", _fast_router_node)
+    graph.add_node("intent_classifier", _intent_classifier_node)
     graph.add_node("supervisor", _supervisor_node)
     graph.add_node("career_agent", career_agent)
     graph.add_node("project_agent", project_agent)
     graph.add_node("skills_agent", skills_agent)
     graph.add_node("personal_agent", personal_agent)
     graph.add_node("job_prep_agent", job_prep_agent)
+    graph.add_node("calendar_agent", calendar_agent)
     graph.add_node("grounding_guard", _grounding_guard_node)
     graph.add_node("rerank", _rerank_node)
     graph.add_node("synthesis", _synthesis_tl_node)  # reads queue from _tl.token_queue
@@ -697,8 +802,8 @@ def _build_streaming_graph() -> object:
     graph.add_node("trace_log", _trace_log_node)
     graph.add_node("notification_agent", _notification_agent_node)
 
-    graph.set_entry_point("fast_router")
-    graph.add_edge("fast_router", "supervisor")
+    graph.set_entry_point("intent_classifier")
+    graph.add_edge("intent_classifier", "supervisor")
     graph.add_conditional_edges(
         "supervisor",
         _route_to_agents,
@@ -775,6 +880,7 @@ def run_multi_agent_graph_stream(
     No graph rebuild per request.
 
     Event types:
+      {"agent_status": str, "status": str, ...}                          — agent progress
       {"token": str}                                                     — synthesis tokens
       {"done": True, "no_info": bool, "final": str, "sources": list,
        "agent_trace": list}                                              — terminal event
@@ -819,13 +925,14 @@ def get_graph_topology() -> dict:
     """
     return {
         "nodes": [
-            {"id": "fast_router", "type": "classifier", "description": "Regex-based domain routing (no LLM) + query rewrite (1 LLM call)"},
+            {"id": "intent_classifier", "type": "classifier", "description": "LLM structured output intent classification + query rewrite"},
             {"id": "supervisor", "type": "orchestrator", "description": "Initialises run and dispatches agents in parallel"},
-            {"id": "career_agent", "type": "specialist", "domain": "career", "description": "A: domain query expansion → fetch_context; B: mini-summary via cheap LLM (parallel)"},
-            {"id": "project_agent", "type": "specialist", "domain": "project", "description": "A: domain query expansion → fetch_context; B: mini-summary via cheap LLM (parallel)"},
-            {"id": "skills_agent", "type": "specialist", "domain": "skills", "description": "A: domain query expansion → fetch_context; B: mini-summary via cheap LLM (parallel)"},
-            {"id": "personal_agent", "type": "specialist", "domain": "personal", "description": "A: domain query expansion → fetch_context; B: mini-summary via cheap LLM (parallel)"},
-            {"id": "job_prep_agent", "type": "specialist", "domain": "job_prep", "description": "C: extract_job_requirements → requirement-targeted fetch; B: fit-signal summary"},
+            {"id": "career_agent", "type": "specialist", "domain": "career", "description": "ReAct agent with search_knowledge, get_time_period_summary, list_domain_items tools"},
+            {"id": "project_agent", "type": "specialist", "domain": "project", "description": "ReAct agent with search_knowledge, list_domain_items, get_knowledge_scope tools"},
+            {"id": "skills_agent", "type": "specialist", "domain": "skills", "description": "ReAct agent with search_knowledge, list_domain_items tools"},
+            {"id": "personal_agent", "type": "specialist", "domain": "personal", "description": "ReAct agent with search_knowledge, get_time_period_summary tools"},
+            {"id": "job_prep_agent", "type": "specialist", "domain": "job_prep", "description": "ReAct agent with search_knowledge, fetch_job_description, score_job_fit, extract_job_fit_signals, search_recent_jobs tools"},
+            {"id": "calendar_agent", "type": "specialist", "domain": "calendar", "description": "ReAct agent using Google Calendar MCP tools to check availability and list events"},
             {"id": "grounding_guard", "type": "guard", "description": "Merge agent doc sets, dedup, token budget enforcement"},
             {"id": "rerank", "type": "reranker", "description": "Single LLM rerank on merged final set"},
             {"id": "synthesis", "type": "generator", "description": "Structured synthesis from per-domain summaries + merged context"},
@@ -834,18 +941,20 @@ def get_graph_topology() -> dict:
             {"id": "notification_agent", "type": "notifier", "description": "Fire-and-forget email notification to owner when query is unanswerable"},
         ],
         "edges": [
-            {"from": "fast_router", "to": "supervisor", "type": "always"},
+            {"from": "intent_classifier", "to": "supervisor", "type": "always"},
             {"from": "supervisor", "to": "career_agent", "type": "conditional_fan_out"},
             {"from": "supervisor", "to": "project_agent", "type": "conditional_fan_out"},
             {"from": "supervisor", "to": "skills_agent", "type": "conditional_fan_out"},
             {"from": "supervisor", "to": "personal_agent", "type": "conditional_fan_out"},
             {"from": "supervisor", "to": "job_prep_agent", "type": "conditional_fan_out"},
+            {"from": "supervisor", "to": "calendar_agent", "type": "conditional_fan_out"},
             {"from": "supervisor", "to": "grounding_guard", "type": "fallback"},
             {"from": "career_agent", "to": "grounding_guard", "type": "fan_in"},
             {"from": "project_agent", "to": "grounding_guard", "type": "fan_in"},
             {"from": "skills_agent", "to": "grounding_guard", "type": "fan_in"},
             {"from": "personal_agent", "to": "grounding_guard", "type": "fan_in"},
             {"from": "job_prep_agent", "to": "grounding_guard", "type": "fan_in"},
+            {"from": "calendar_agent", "to": "grounding_guard", "type": "fan_in"},
             {"from": "grounding_guard", "to": "rerank", "type": "always"},
             {"from": "rerank", "to": "synthesis", "type": "always"},
             {"from": "synthesis", "to": "hitl_review", "type": "always"},

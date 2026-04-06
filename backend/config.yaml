@@ -23,6 +23,20 @@ USE_MULTI_AGENT: true
 USE_GRAPH: false
 ADMIN_API_KEY: ""
 OWNER_ID: "default"
+# External MCP servers available to specialist agents.
+# Each entry: name (must match mcp_server_filter in agent_skills.py), command, args, optional env.
+# calendar_agent uses mcp_server_filter: ["google-calendar"] — set command/args to your MCP server.
+# Example using @anthropic-community/mcp-server-google-calendar:
+#
+mcp_clients:
+  - name: "google-calendar"
+    command: "npx"
+    args: ["-y", "@anthropic-community/mcp-server-google-calendar"]
+    env:
+      GOOGLE_CLIENT_ID: "382136155579-dninn2q51qp4al5ptbpkbhj3tdlkdt7e.apps.googleusercontent.com"
+      GOOGLE_CLIENT_SECRET: "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"
+      GOOGLE_REFRESH_TOKEN: "your-refresh-token"
+mcp_clients: []
 frontend:
   app_name: MyBestFriend
   owner_name: Beiji
