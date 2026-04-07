@@ -366,6 +366,17 @@ def evaluate_multi_agent_run(
     # - evaluator_suppressed=False + no_info=True: no context found (genuine unknown)
     evaluator_suppressed = no_info and (evaluator_passed is False)
 
+    raw_context = result.get("context", "")
+    agent_results_clean = [
+        {k: v for k, v in r.items() if k != "docs"}
+        for r in result.get("agent_results", [])
+    ]
+    # Build synthesis_context: raw docs + domain summaries (what synthesis actually received)
+    summaries_text = "\n\n".join(
+        r["summary"] for r in agent_results_clean if r.get("summary")
+    )
+    synthesis_context = "\n\n".join(filter(None, [raw_context, summaries_text]))
+
     return {
         "answer": result.get("answer", ""),
         "no_info": no_info,
@@ -373,12 +384,10 @@ def evaluate_multi_agent_run(
         "evaluator_score": evaluator_score,
         "evaluator_suppressed": evaluator_suppressed,
         "sources": result.get("sources", []),
-        "context": result.get("context", ""),
+        "context": raw_context,
+        "synthesis_context": synthesis_context,
         "active_agents": result.get("active_agents", []),
-        "agent_results": [
-            {k: v for k, v in r.items() if k != "docs"}
-            for r in result.get("agent_results", [])
-        ],
+        "agent_results": agent_results_clean,
         "agent_trace": result.get("agent_trace", []),
         "token_budget_used": result.get("token_budget_used", 0),
     }
@@ -407,7 +416,7 @@ def evaluate_multi_agent_all(tests: list[TestQuestion]) -> MultiAgentEvalResult:
             trace = evaluate_multi_agent_run(test.question)
             traces.append(trace)
             answers.append(trace.get("answer", ""))
-            contexts.append(trace.get("context", ""))
+            contexts.append(trace.get("synthesis_context", "") or trace.get("context", ""))
             if trace.get("no_info"):
                 no_info_count += 1
                 if trace.get("evaluator_suppressed"):

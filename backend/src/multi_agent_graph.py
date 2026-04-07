@@ -315,22 +315,26 @@ def _make_react_agent(agent_name: str) -> Callable[[MultiAgentState], dict]:
             # Collect docs from search_knowledge tool results
             import json as _json
             docs = []
+            _seen_content: set[str] = set()
             from langchain_core.documents import Document
             for tr in all_tool_results:
                 if tr["tool"] == "search_knowledge":
                     try:
                         parsed = _json.loads(tr["result"])
                         for r in parsed.get("results", []):
-                            docs.append(Document(
-                                page_content=r.get("content", ""),
-                                metadata={
-                                    "source": r.get("source", ""),
-                                    "doc_type": r.get("doc_type", ""),
-                                    "year": r.get("year", ""),
-                                    "section": r.get("section", ""),
-                                    "title": r.get("title", ""),
-                                },
-                            ))
+                            content = r.get("content", "")
+                            if content and content not in _seen_content:
+                                _seen_content.add(content)
+                                docs.append(Document(
+                                    page_content=content,
+                                    metadata={
+                                        "source": r.get("source", ""),
+                                        "doc_type": r.get("doc_type", ""),
+                                        "year": r.get("year", ""),
+                                        "section": r.get("section", ""),
+                                        "title": r.get("title", ""),
+                                    },
+                                ))
                     except (_json.JSONDecodeError, KeyError):
                         pass
 

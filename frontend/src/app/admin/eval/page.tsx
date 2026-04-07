@@ -898,12 +898,12 @@ export default function EvalPage() {
                         max={1}
                         format={(v) => `${(v * 100).toFixed(1)}%`}
                       />
-                      <MetricBar
+                      {/* <MetricBar
                         label="Context Redundancy Ratio (ACRR)"
                         value={maJob.result.agent_context_redundancy_ratio}
                         max={1}
                         format={(v) => v.toFixed(3)}
-                      />
+                      /> */}
                       <MetricBar
                         label="Synthesis Faithfulness"
                         value={maJob.result.synthesis_faithfulness}
