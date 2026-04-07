@@ -33,9 +33,9 @@ mcp_clients:
     command: "npx"
     args: ["-y", "@anthropic-community/mcp-server-google-calendar"]
     env:
-      GOOGLE_CLIENT_ID: "382136155579-dninn2q51qp4al5ptbpkbhj3tdlkdt7e.apps.googleusercontent.com"
-      GOOGLE_CLIENT_SECRET: "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"
-      GOOGLE_REFRESH_TOKEN: "your-refresh-token"
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      GOOGLE_REFRESH_TOKEN: ""
 mcp_clients: []
 frontend:
   app_name: MyBestFriend
